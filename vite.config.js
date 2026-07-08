@@ -6,11 +6,12 @@ import { copyFileSync, mkdirSync, writeFileSync } from 'node:fs';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const target = process.env.BUILD_TARGET || 'web';
 
-// 双形态构建管线：
-//   BUILD_TARGET=web  -> 输出 GitHub Pages 静态站点 (dist-web/)，入口在根
-//   BUILD_TARGET=ext  -> 输出浏览器扩展包 (dist-ext/)：manifest + popup + background，均在根
-// 通过为两种形态分别设置 root 与绝对入口路径，使 HTML/JS 直接落在产物根目录，
-// 从而与 manifest.json 的 default_popup / service_worker 相对路径一致。
+// Dual-form build pipeline:
+//   BUILD_TARGET=web -> GitHub Pages static site (dist-web/), entry at root
+//   BUILD_TARGET=ext -> browser extension bundle (dist-ext/): manifest + popup +
+//                       background, all at root
+// Each form gets its own root + absolute entry paths so HTML/JS land at the
+// product root, matching manifest.json's default_popup / service_worker paths.
 const root = target === 'web' ? resolve(__dirname, 'src/web') : resolve(__dirname, 'src/ext');
 const entry = target === 'web'
   ? resolve(root, 'index.html')
@@ -31,7 +32,8 @@ export default defineConfig({
     },
   },
   define: {
-    // 注入构建目标，供运行时做形态判断（如扩展态路由网络请求到 background）
+    // Inject the build target so runtime can branch by form (e.g. route
+    // network requests through the background in extension form).
     'import.meta.env.BUILD_TARGET': JSON.stringify(target),
   },
   plugins: [
@@ -43,8 +45,9 @@ export default defineConfig({
           mkdirSync(out, { recursive: true });
           copyFileSync(resolve(__dirname, 'src/ext/manifest.json'), resolve(out, 'manifest.json'));
         } else {
-          // GitHub Pages 默认会用 Jekyll 处理静态文件，可能破坏带下划线前缀的资源；
-          // 写入 .nojekyll 关闭 Jekyll。base 已设为 './' 以兼容项目子路径 (/<repo>/)。
+          // GitHub Pages runs Jekyll by default, which can mangle assets with
+          // underscore prefixes; write .nojekyll to disable it. base is './'
+          // so it works under the project subpath (/<repo>/).
           const out = resolve(__dirname, 'dist-web');
           mkdirSync(out, { recursive: true });
           writeFileSync(resolve(out, '.nojekyll'), '');

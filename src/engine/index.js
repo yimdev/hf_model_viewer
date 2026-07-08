@@ -1,32 +1,32 @@
-/* engine/index.js — 解析编排（analyze）
+/* engine/index.js — Parse orchestration (analyze)
  * ------------------------------------------------------------
- * 闭环：
- *   config.json -> 全局超参
- *   model.safetensors.index.json / 单文件 -> 分片清单
- *   并行 HTTP Range -> 各分片头部 JSON -> 扁平张量列表
+ * Pipeline:
+ *   config.json -> global hyper-params
+ *   model.safetensors.index.json / single file -> shard list
+ *   parallel HTTP Range -> per-shard header JSON -> flat tensor list
  * ------------------------------------------------------------ */
 
 import { makeNet } from '../platform/net.js';
 import { readSafetensorsHeader } from './safetensors.js';
 import { mapLimit } from './util.js';
+import { t } from '../i18n.js';
 
 const CONFIG_URL = (repo) => `https://huggingface.co/${repo}/resolve/main/config.json`;
 const INDEX_URL = (repo) => `https://huggingface.co/${repo}/resolve/main/model.safetensors.index.json`;
 const SHARD_BASE = (repo) => `https://huggingface.co/${repo}/resolve/main`;
 
-const NOT_SAFETENSORS =
-  '该模型未提供 Safetensors 格式，无法进行远程 Range 碎片化解析，请更换现代大模型仓库。';
+const NOT_SAFETENSORS = t('err.noSafetensors');
 
 /**
- * 解析一个 Hugging Face 仓库，返回 { repoId, config, tensors, shardFiles, shardCount }。
- * @param {string} repoId 形如 org/repo
+ * Parse a Hugging Face repo, returning { repoId, config, tensors, shardFiles, shardCount }.
+ * @param {string} repoId  e.g. org/repo
  * @param {object} [opts]
- * @param {string} [opts.token] 可选 Hugging Face Access Token（受限/私有模型）
- * @param {(done:number,total:number,file:string)=>void} [opts.onShard] 分片进度回调
+ * @param {string} [opts.token]  optional Hugging Face Access Token (gated / private models)
+ * @param {(done:number,total:number,file:string)=>void} [opts.onShard]  shard progress callback
  */
 export async function analyze(repoId, { token, onShard } = {}) {
   if (!repoId || !/^[\w.-]+\/[\w.-]+/.test(repoId)) {
-    throw new Error('请输入合法的仓库 ID，形如 org/repo');
+    throw new Error(t('err.badRepoId'));
   }
 
   const net = makeNet();
@@ -37,10 +37,10 @@ export async function analyze(repoId, { token, onShard } = {}) {
   try {
     config = JSON.parse(await net.text(CONFIG_URL(repoId), auth));
   } catch (e) {
-    throw new Error(`无法获取 config.json（仓库是否存在或网络异常）：${e.message}`);
+    throw new Error(`${t('err.configFetch')}${e.message}`);
   }
 
-  // 2) 分片发现：优先 index.json，回退单文件 model.safetensors
+  // 2) Shard discovery: prefer index.json, fall back to single model.safetensors.
   const base = SHARD_BASE(repoId);
   let shardFiles = [];
   try {
@@ -58,7 +58,8 @@ export async function analyze(repoId, { token, onShard } = {}) {
 
   if (!shardFiles.length) throw new Error(NOT_SAFETENSORS);
 
-  // 3) 并行拉取所有分片头部（并发上限 16，满足超大 MoE <3s）
+  // 3) Fetch all shard headers in parallel (cap 16 concurrent, keeps huge
+  //    MoE repos under ~3s).
   const headersMap = {};
   let done = 0;
   await mapLimit(shardFiles, 16, async (file) => {
@@ -67,7 +68,7 @@ export async function analyze(repoId, { token, onShard } = {}) {
     onShard?.(done, shardFiles.length, file);
   });
 
-  // 4) 合并为扁平张量列表
+  // 4) Merge into a flat tensor list.
   const tensors = [];
   for (const file of shardFiles) {
     const h = headersMap[file];

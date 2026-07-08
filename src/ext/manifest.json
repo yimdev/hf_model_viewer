@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "LLM 架构与显存计算器",
+  "name": "LLM Architecture & VRAM Calculator",
   "version": "1.0.0",
-  "description": "零下载解析 Hugging Face 模型拓扑，并提供动态显存（VRAM）计算。支持 MoE 与 DeepSeek MLA 架构。",
+  "description": "Zero-download parsing of Hugging Face model topology with dynamic VRAM estimation. Supports MoE and DeepSeek MLA / DSA architectures.",
   "permissions": ["storage"],
   "host_permissions": [
     "https://huggingface.co/*",
@@ -10,7 +10,7 @@
   ],
   "action": {
     "default_popup": "popup.html",
-    "default_title": "LLM 架构与显存计算器"
+    "default_title": "LLM Architecture & VRAM Calculator"
   },
   "background": {
     "service_worker": "background.js",

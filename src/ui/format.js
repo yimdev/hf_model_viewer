@@ -1,4 +1,4 @@
-/* ui/format.js — 展示格式化工具 */
+/* ui/format.js — Display formatting helpers */
 
 export function fmtNum(n) {
   if (!Number.isFinite(n)) return '—';

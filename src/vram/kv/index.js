@@ -1,24 +1,29 @@
-/* vram/kv/index.js — KV Cache 调度中心（注册表 + 双路径分发）
+/* vram/kv/index.js — KV Cache dispatcher (registry + dual-path routing)
  * ------------------------------------------------------------
- * 每种架构一个独立文件（mha.js / mla.js / dsa.js），推断架构的逻辑在 detect.js，
- * 三者同处本目录，便于扩展：新增架构只需在目录下加一个文件、在此注册即可。
+ * Each architecture lives in its own file (mha.js / mla.js / dsa.js); arch
+ * detection lives in detect.js. All three sit in this directory so adding an
+ * architecture is just: add a file + register it here.
  *
- * 调度策略：
- *   1) 主路径「张量推导」：从 safetensors 张量形状算 KV（厂商无关，免字段名猜测）。
- *      由 detectArchFromTensors 判定架构，调用对应模块的 computeFromTensors。
- *   2) 回退「config 推导」：仅当张量无法纯形状拆分（如融合 QKV）或缺失时，
- *      由 detectAttnArch 判定架构，调用对应模块的 computeFromConfig。
- *   3) DSA 升级：张量识别为 MLA latent、但 config 暴露 index_head_dim → 补计 FP8 索引器。
+ * Dispatch strategy:
+ *   1) Primary "tensor path": derive KV from safetensors tensor shapes
+ *      (vendor-neutral, no field-name guessing). detectArchFromTensors picks
+ *      the arch, then the module's computeFromTensors runs.
+ *   2) Fallback "config path": only when tensors can't be split by shape
+ *      (e.g. fused QKV) or are missing; detectAttnArch picks the arch, then
+ *      the module's computeFromConfig runs.
+ *   3) DSA upgrade: tensors identified as MLA latent but config exposes
+ *      index_head_dim -> add the FP8 indexer.
  *
- * 返回：{ vKV, attnArch, formulaLabel, note, kvUnknown?, kvMethod }
- *   attnArch ∈ { 'mha' | 'gqa' | 'mqa' | 'mla' | 'dsa' }（小写，供 UI 徽章直接映射）
+ * Returns: { vKV, attnArch, formulaLabel, note, kvUnknown?, kvMethod }
+ *   attnArch ∈ { 'mha' | 'gqa' | 'mqa' | 'mla' | 'dsa' } (lowercase, maps
+ *     directly to UI badges)
  *   kvMethod ∈ { 'tensors' | 'config' }
  * ------------------------------------------------------------ */
 
 import mha from './mha.js';
 import mla from './mla.js';
 import dsa from './dsa.js';
-import { DSA_NOTE } from './dsa.js';
+import { DSA_NOTE_KEY } from './dsa.js';
 import {
   detectAttnArch,
   detectArchFromTensors,
@@ -26,15 +31,16 @@ import {
   num,
   GB,
 } from './detect.js';
+import { t } from '../../i18n.js';
 
 const REGISTRY = { mha, mla, dsa };
 
 /**
- * 统一入口：计算 KV Cache。
+ * Unified entry point: compute KV Cache.
  * @param {object} opts { config, tensors?, precision?, batch?, seq? }
  */
 export function computeKV({ config = {}, tensors = null, precision = 'fp16', batch = 1, seq = 8192 } = {}) {
-  // ── 主路径：张量形状推导（通用、免字段名猜测） ──
+  // ── Primary path: derive from tensor shapes (generic, no field guessing) ──
   if (Array.isArray(tensors) && tensors.length) {
     const parsed = extractLayerTensors(tensors);
     if (parsed) {
@@ -43,13 +49,14 @@ export function computeKV({ config = {}, tensors = null, precision = 'fp16', bat
         const mod = REGISTRY[archName];
         const r = mod.computeFromTensors({ ...parsed, config, batch, seq });
         if (r && Number.isFinite(r.vKV)) {
-          // DSA 升级：张量识别为 MLA latent，但 config 暴露 index_head_dim → 补计 FP8 索引器
+          // DSA upgrade: tensors identified as MLA latent, but config exposes
+          // index_head_dim -> add the FP8 indexer.
           if (archName === 'mla' && detectAttnArch(config) === 'dsa') {
             const Didx = num(config.index_head_dim ?? 128, 128);
             r.vKV += (batch * seq * parsed.L * Didx * 1) / GB;
             r.attnArch = 'dsa';
-            r.formulaLabel = 'DSA 稀疏注意力（张量推导 latent + FP8 索引器）';
-            r.note = DSA_NOTE;
+            r.formulaLabel = t('kv.dsa.tensor');
+            r.note = t(DSA_NOTE_KEY);
           }
           return { ...r, kvMethod: 'tensors' };
         }
@@ -57,7 +64,7 @@ export function computeKV({ config = {}, tensors = null, precision = 'fp16', bat
     }
   }
 
-  // ── 回退：config 超参推导（覆盖融合 QKV 等张量无法拆分的情形） ──
+  // ── Fallback: derive from config hyper-params (covers fused QKV etc.) ──
   const archName = detectAttnArch(config);
   const mod = REGISTRY[archName] || REGISTRY.mha;
   try {

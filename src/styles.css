@@ -1,7 +1,8 @@
 /* ============================================================
-   LLM 架构与显存计算器 — 共享样式（手写下，无外部依赖）
-   说明：Spec 推荐 Tailwind，但为满足「扩展形态零外部请求」约束，
-   改为内联编译的纯 CSS，保证 Web 与扩展双形态离线可用。
+   LLM Architecture & VRAM Calculator — shared styles (hand-written, no deps)
+   Note: Spec recommended Tailwind, but to satisfy the "extension form makes
+   zero external requests" constraint we use hand-compiled plain CSS so both
+   web and extension work fully offline.
    ============================================================ */
 :root {
   --bg: #f5f7fb;
@@ -40,7 +41,7 @@ html, body {
   min-height: 100vh;
 }
 
-/* ---------------- Sidebar (左：控制与计算) ---------------- */
+/* ---------------- Sidebar (left: controls & calc) ---------------- */
 .sidebar {
   width: 340px;
   flex: 0 0 340px;
@@ -64,6 +65,28 @@ html, body {
   color: var(--muted);
   font-size: 12px;
   margin-top: 2px;
+}
+
+/* Language toggle (zh / en switch) */
+.lang-toggle {
+  display: flex;
+  gap: 4px;
+  margin-top: 8px;
+}
+.lang-btn {
+  font-size: 12px;
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  background: #fff;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--muted);
+}
+.lang-btn.active {
+  border-color: var(--primary);
+  background: #eff6ff;
+  color: var(--primary-d);
+  font-weight: 700;
 }
 
 .search-row {
@@ -167,7 +190,7 @@ input[type="range"] { width: 100%; accent-color: var(--primary); }
   font-size: 13px;
 }
 
-/* 显存明细卡片 */
+/* VRAM breakdown card */
 .summary {
   margin-top: 18px;
   border-radius: var(--radius);
@@ -186,7 +209,7 @@ input[type="range"] { width: 100%; accent-color: var(--primary); }
 .status.error { color: var(--red); }
 .status.ok { color: var(--green); }
 
-/* ---------------- Main (右：结果渲染) ---------------- */
+/* ---------------- Main (right: results) ---------------- */
 .main {
   flex: 1;
   padding: 22px;
@@ -310,7 +333,7 @@ table.ops code {
 .tag.mqa { background: #cffafe; color: #0e7490; }
 .dsa-note { color: #b45309; background: #fffbeb; border: 1px dashed #fcd34d; border-radius: 6px; padding: 6px 8px; margin-top: 6px; }
 
-/* 窄屏（含扩展 Popup）/ 响应式：双栏堆叠为单栏 */
+/* Narrow screens (incl. extension Popup) / responsive: stack columns */
 @media (max-width: 820px) {
   .app { flex-direction: column; }
   .sidebar {

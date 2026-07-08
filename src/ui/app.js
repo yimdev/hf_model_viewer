@@ -1,8 +1,9 @@
-/* ui/app.js — 应用编排（双形态共享）
+/* ui/app.js — App orchestration (shared by web & extension)
  * ------------------------------------------------------------
- * 构建「左配置计算 / 右结果渲染」双栏布局，串接：
- *   analyze -> buildTree -> estimateVRAM -> 树渲染 + 图表 + 显存明细
- * Web 与扩展共用同一份此逻辑，仅挂载入口不同。
+ * Two-column layout: left = config & calc controls, right = results.
+ * Pipeline: analyze -> buildTree -> estimateVRAM -> tree + chart + breakdown.
+ * Web and extension share this logic; only the mount entry differs.
+ * Language: strings come from i18n (t); switching re-paints the shell.
  * ------------------------------------------------------------ */
 
 import '../styles.css';
@@ -12,30 +13,41 @@ import { estimateVRAM, buildEffBppMap } from '../vram/index.js';
 import { renderTree, updateTreeBytes } from './treeView.js';
 import { renderChart, COLORS } from './chart.js';
 import { fmtNum, fmtGB, esc } from './format.js';
+import { t, getLang, setLang, onLangChange } from '../i18n.js';
 
-// 读取模型最大上下文长度：优先 max_position_embeddings，回退 max_sequence_length
+// Read model max context length: prefer max_position_embeddings, fall back
+// to max_sequence_length / max_position_embedding.
 function getMaxContextLength(config) {
   const v = config.max_position_embeddings ?? config.max_sequence_length ?? config.max_position_embedding;
   return typeof v === 'number' && v > 0 ? v : null;
 }
 
-const LAYOUT = `
+function buildLayout() {
+  const lang = getLang();
+  const active = (l) => (lang === l ? ' active' : '');
+  return `
 <div class="app">
   <aside class="sidebar">
-    <div class="brand">LLM 架构与显存计算器<small>零下载解析 · 动态 VRAM 计算 · 双形态分发</small></div>
+    <div class="brand">
+      ${esc(t('brand.title'))}<small>${esc(t('brand.sub'))}</small>
+      <div class="lang-toggle">
+        <button class="lang-btn${active('zh')}" data-lang="zh">中文</button>
+        <button class="lang-btn${active('en')}" data-lang="en">EN</button>
+      </div>
+    </div>
 
     <div class="search-row">
-      <input id="repo" placeholder="org/repo，如 Qwen/Qwen2.5-7B-Instruct" />
-      <button id="analyze">Analyze</button>
+      <input id="repo" placeholder="${esc(t('ctl.repoPlaceholder'))}" />
+      <button id="analyze">${esc(t('ctl.analyze'))}</button>
     </div>
 
     <details class="field">
-      <summary>高级（受限模型可选 Token）</summary>
-      <input id="token" class="seq-input" style="margin-top:8px" placeholder="hf_xxx（私有/受限仓库时填写）" />
+      <summary>${esc(t('ctl.advanced'))}</summary>
+      <input id="token" class="seq-input" style="margin-top:8px" placeholder="${esc(t('ctl.tokenPlaceholder'))}" />
     </details>
 
     <div class="field">
-      <label>Quantization 精度</label>
+      <label>${esc(t('ctl.quantPrecision'))}</label>
       <div class="radios">
         <label><input type="radio" name="q" value="fp16" checked /> FP16/BF16</label>
         <label><input type="radio" name="q" value="int8" /> INT8</label>
@@ -44,22 +56,22 @@ const LAYOUT = `
     </div>
 
     <div class="field">
-      <label>量化策略</label>
+      <label>${esc(t('ctl.quantStrategy'))}</label>
       <select id="qstrat">
-        <option value="uniform">均匀量化（全部张量按精度滑杆）</option>
-        <option value="keep-fp16">仅 Linear 量化（Embedding/Norm/LM Head 保留 FP16）</option>
-        <option value="native">按磁盘实际精度（忽略滑杆，含预量化）</option>
+        <option value="uniform">${esc(t('ctl.stratUniform'))}</option>
+        <option value="keep-fp16">${esc(t('ctl.stratKeepFp16'))}</option>
+        <option value="native">${esc(t('ctl.stratNative'))}</option>
       </select>
-      <p class="hint">权重显存以磁盘 dtype 为真值：已预量化模型（如 FP4/INT4）直接按实际占用计。</p>
+      <p class="hint">${esc(t('ctl.quantHint'))}</p>
     </div>
 
     <div class="field">
-      <label>Batch Size：<span class="bubble" id="batchVal">1</span></label>
+      <label>${esc(t('ctl.batchSize'))}<span class="bubble" id="batchVal">1</span></label>
       <input type="range" id="batch" min="1" max="128" value="1" />
     </div>
 
     <div class="field">
-      <label>Context Length</label>
+      <label>${esc(t('ctl.contextLength'))}</label>
       <div class="chips">
         <button data-seq="8192">8K</button>
         <button data-seq="32768">32K</button>
@@ -74,37 +86,25 @@ const LAYOUT = `
 
   <main class="main">
     <section class="overview">
-      <h2>总览</h2>
-      <div class="summary-grid" id="stats"><div class="empty">尚未分析</div></div>
+      <h2>${esc(t('ov.title'))}</h2>
+      <div class="summary-grid" id="stats"><div class="empty">${esc(t('ctl.empty'))}</div></div>
       <canvas id="chart"></canvas>
-      <h3 class="comp-title">组成明细</h3>
-      <div id="comp" class="comp-wrap"><div class="empty">尚未分析</div></div>
+      <h3 class="comp-title">${esc(t('ov.compTitle'))}</h3>
+      <div id="comp" class="comp-wrap"><div class="empty">${esc(t('ctl.empty'))}</div></div>
     </section>
     <section class="tree">
-      <h2>层级结构树</h2>
-      <div id="tree"><div class="empty">输入仓库 ID 并点击 Analyze 开始解析</div></div>
+      <h2>${esc(t('ov.treeTitle'))}</h2>
+      <div id="tree"><div class="empty">${esc(t('ov.treeEmpty'))}</div></div>
     </section>
   </main>
 </div>`;
+}
 
 export function mountApp(rootEl) {
-  rootEl.innerHTML = LAYOUT;
+  let state = null; // { config, tree, tensors, shardCount }
+  let lastRepo = '';
 
   const $ = (id) => rootEl.querySelector('#' + id);
-  const repoInput = $('repo');
-  const tokenInput = $('token');
-  const analyzeBtn = $('analyze');
-  const batchInput = $('batch');
-  const batchVal = $('batchVal');
-  const seqInput = $('seq');
-  const chips = rootEl.querySelectorAll('.chips button');
-  const statusEl = $('status');
-  const summaryEl = $('summary');
-  const statsEl = $('stats');
-  const treeEl = $('tree');
-  const canvas = $('chart');
-
-  let state = null; // { config, tree, tensors }
 
   function getPrecision() {
     const el = rootEl.querySelector('input[name="q"]:checked');
@@ -116,12 +116,13 @@ export function mountApp(rootEl) {
     return el ? el.value : 'uniform';
   }
 
-  // 由当前精度 + 量化策略，计算每个张量的有效每参数字节（与计算器一致）
+  // Effective per-parameter bytes for every tensor (matches the calculator).
   function buildEffMap() {
     return buildEffBppMap(state.tensors, { targetPrecision: getPrecision(), strategy: getStrategy() });
   }
 
   function setStatus(msg, kind = '') {
+    const statusEl = $('status');
     statusEl.className = 'status' + (kind ? ' ' + kind : '');
     statusEl.textContent = msg;
   }
@@ -129,38 +130,45 @@ export function mountApp(rootEl) {
   function recompute() {
     if (!state) return;
     const precision = getPrecision();
-    const batch = parseInt(batchInput.value, 10) || 1;
-    const seq = parseInt(seqInput.value, 10) || 8192;
+    const batch = parseInt($('batch').value, 10) || 1;
+    const seq = parseInt($('seq').value, 10) || 8192;
 
-    const est = estimateVRAM(state.config, state.tree, { precision, batch, seq, tensors: state.tensors, strategy: getStrategy() });
+    const est = estimateVRAM(state.config, state.tree, {
+      precision,
+      batch,
+      seq,
+      tensors: state.tensors,
+      strategy: getStrategy(),
+    });
 
-    renderChart(canvas, est);
+    renderChart($('chart'), est);
     renderComposition(est);
-    updateTreeBytes(treeEl, state.tree, buildEffMap());
+    updateTreeBytes($('tree'), state.tree, buildEffMap());
 
-    // 显存明细卡片（不含显卡推荐）
+    // VRAM breakdown card (no GPU recommendation).
+    const summaryEl = $('summary');
     summaryEl.style.display = '';
     summaryEl.innerHTML = `
-      <div class="hw-note" style="font-size:13px">总显存需求：<b>${fmtGB(est.vTotal)}</b> ｜ 权重 ${fmtGB(est.vWeights)} ｜ KV ${est.kvUnknown ? '—' : fmtGB(est.vKV)} ｜ 开销 ${fmtGB(est.vOverhead)}</div>
-      ${est.weightNote ? `<div class="hw-note">权重策略：${esc(est.weightNote)}</div>` : ''}
-      ${est.kvFormulaLabel ? `<div class="hw-note">注意力架构：<span class="tag ${esc(est.attnArch)}">${esc(est.attnArch.toUpperCase())}</span> ｜ KV 公式：${esc(est.kvFormulaLabel)}</div>` : ''}
+      <div class="hw-note" style="font-size:13px">${esc(t('sum.total'))}<b>${fmtGB(est.vTotal)}</b> ｜ ${esc(t('sum.weights'))} ${fmtGB(est.vWeights)} ｜ KV ${est.kvUnknown ? '—' : fmtGB(est.vKV)} ｜ ${esc(t('sum.overhead'))} ${fmtGB(est.vOverhead)}</div>
+      ${est.weightNote ? `<div class="hw-note">${esc(t('sum.weightStrategy'))}${esc(est.weightNote)}</div>` : ''}
+      ${est.kvFormulaLabel ? `<div class="hw-note">${esc(t('sum.attnArch'))}<span class="tag ${esc(est.attnArch)}">${esc(est.attnArch.toUpperCase())}</span> ｜ ${esc(t('sum.kvFormula'))}${esc(est.kvFormulaLabel)}</div>` : ''}
       ${est.kvNote ? `<div class="hw-note dsa-note">${esc(est.kvNote)}</div>` : ''}
     `;
   }
 
-  // 总览「组成明细」：按 group 分组列出每个分类的细粒度构成与占比
+  // Overview "composition breakdown": group rows by category with size & share.
   function renderComposition(est) {
     const compEl = $('comp');
     if (!est.composition || !est.composition.length) {
-      compEl.innerHTML = '<div class="empty">尚未分析</div>';
+      compEl.innerHTML = `<div class="empty">${esc(t('ctl.empty'))}</div>`;
       return;
     }
     const total = est.vTotal || 1;
     const groups = [
-      { key: 'weight', title: '权重显存（稠密基础）' },
-      { key: 'moe', title: 'MoE 专家层' },
-      { key: 'kv', title: 'KV Cache' },
-      { key: 'overhead', title: '固有开销' },
+      { key: 'weight', title: t('group.weight') },
+      { key: 'moe', title: t('group.moe') },
+      { key: 'kv', title: t('group.kv') },
+      { key: 'overhead', title: t('group.overhead') },
     ];
     let html = '<div class="comp">';
     for (const g of groups) {
@@ -171,7 +179,7 @@ export function mountApp(rootEl) {
       for (const it of items) {
         const pct = (it.gb / total) * 100;
         const color = COLORS[it.key] || '#94a3b8';
-        html += `<div class="comp-row"><span class="dot" style="background:${color}"></span><span class="comp-name">${esc(it.label)}</span><span class="comp-val">${fmtGB(it.gb)} · ${pct.toFixed(1)}%</span></div>`;
+        html += `<div class="comp-row"><span class="dot" style="background:${color}"></span><span class="comp-name">${esc(t(it.labelKey))}</span><span class="comp-val">${fmtGB(it.gb)} · ${pct.toFixed(1)}%</span></div>`;
       }
       html += '</div>';
     }
@@ -184,46 +192,56 @@ export function mountApp(rootEl) {
     const arch = Array.isArray(config.architectures)
       ? config.architectures.join(', ')
       : config.model_type || '—';
-    statsEl.innerHTML = `
-      <div class="stat">总参数<b>${fmtNum(tree.totalParams)}</b></div>
-      <div class="stat">层数<b>${tree.numLayers}</b></div>
-      <div class="stat">MoE<b>${tree.isMoe ? '是 ×' + tree.numExperts + ' 专家' : '否'}</b></div>
-      <div class="stat">架构<b style="font-size:13px">${esc(arch)}</b></div>
-      <div class="stat">分片数<b>${state.shardCount ?? '—'}</b></div>
+    const moe = tree.isMoe ? t('stat.moeYes', { n: tree.numExperts }) : t('stat.no');
+    $('stats').innerHTML = `
+      <div class="stat">${esc(t('stat.totalParams'))}<b>${fmtNum(tree.totalParams)}</b></div>
+      <div class="stat">${esc(t('stat.layers'))}<b>${tree.numLayers}</b></div>
+      <div class="stat">${esc(t('stat.moe'))}<b>${moe}</b></div>
+      <div class="stat">${esc(t('stat.arch'))}<b style="font-size:13px">${esc(arch)}</b></div>
+      <div class="stat">${esc(t('stat.shards'))}<b>${state.shardCount ?? '—'}</b></div>
     `;
   }
 
   async function run() {
+    const repoInput = $('repo');
     const repo = repoInput.value.trim();
     if (!repo) {
-      setStatus('请输入仓库 ID（org/repo）', 'error');
+      setStatus(t('status.enterRepo'), 'error');
       return;
     }
+    const analyzeBtn = $('analyze');
     analyzeBtn.disabled = true;
-    setStatus('解析中：拉取 config.json …');
+    setStatus(t('status.fetching'));
     try {
       const result = await analyze(repo, {
-        token: tokenInput.value.trim() || undefined,
+        token: $('token').value.trim() || undefined,
         onShard: (done, total, file) => {
-          setStatus(`解析分片头部 ${done}/${total}：${file}`);
+          setStatus(t('status.shard', { done, total, file }));
         },
       });
-      state = { config: result.config, tree: buildTree(result.tensors), tensors: result.tensors, shardCount: result.shardCount };
+      state = {
+        config: result.config,
+        tree: buildTree(result.tensors),
+        tensors: result.tensors,
+        shardCount: result.shardCount,
+      };
+      lastRepo = repo;
       renderStats();
 
-      // Context Length 默认填充为该模型的最大上下文长度
+      // Context Length defaults to this model's max context length.
       const maxCtx = getMaxContextLength(result.config);
+      const seqInput = $('seq');
       if (maxCtx) {
         seqInput.max = String(Math.max(maxCtx, 131072));
         seqInput.value = String(maxCtx);
       } else {
         seqInput.value = '8192';
       }
-      chips.forEach((x) => x.classList.remove('active'));
+      rootEl.querySelectorAll('.chips button').forEach((x) => x.classList.remove('active'));
 
-      renderTree(treeEl, state.tree, buildEffMap());
+      renderTree($('tree'), state.tree, buildEffMap());
       recompute();
-      setStatus(`解析完成：${result.shardCount} 个分片，${result.tensors.length} 个张量`, 'ok');
+      setStatus(t('status.done', { shards: result.shardCount, tensors: result.tensors.length }), 'ok');
     } catch (e) {
       setStatus(e.message || String(e), 'error');
     } finally {
@@ -231,27 +249,56 @@ export function mountApp(rootEl) {
     }
   }
 
-  // ---- 事件绑定 ----
-  analyzeBtn.addEventListener('click', run);
-  repoInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') run();
-  });
+  // ---- Shell render + event binding ----
+  function bindShell() {
+    const analyzeBtn = $('analyze');
+    const repoInput = $('repo');
+    const batchInput = $('batch');
+    const seqInput = $('seq');
 
-  batchInput.addEventListener('input', () => {
-    batchVal.textContent = batchInput.value;
-    recompute();
-  });
+    analyzeBtn.addEventListener('click', run);
+    repoInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') run();
+    });
 
-  seqInput.addEventListener('input', () => recompute());
-  chips.forEach((c) =>
-    c.addEventListener('click', () => {
-      seqInput.value = c.dataset.seq;
-      chips.forEach((x) => x.classList.remove('active'));
-      c.classList.add('active');
+    batchInput.addEventListener('input', () => {
+      $('batchVal').textContent = batchInput.value;
       recompute();
-    }),
-  );
+    });
 
-  rootEl.querySelectorAll('input[name="q"]').forEach((r) => r.addEventListener('change', recompute));
-  $('qstrat').addEventListener('change', recompute);
+    seqInput.addEventListener('input', () => recompute());
+    rootEl.querySelectorAll('.chips button').forEach((c) =>
+      c.addEventListener('click', () => {
+        seqInput.value = c.dataset.seq;
+        rootEl.querySelectorAll('.chips button').forEach((x) => x.classList.remove('active'));
+        c.classList.add('active');
+        recompute();
+      }),
+    );
+
+    rootEl.querySelectorAll('input[name="q"]').forEach((r) => r.addEventListener('change', recompute));
+    $('qstrat').addEventListener('change', recompute);
+
+    rootEl.querySelectorAll('.lang-btn').forEach((b) =>
+      b.addEventListener('click', () => setLang(b.dataset.lang)),
+    );
+  }
+
+  function paint() {
+    rootEl.innerHTML = buildLayout();
+    document.title = t('brand.title');
+    document.documentElement.lang = getLang() === 'zh' ? 'zh-CN' : 'en';
+    bindShell();
+    if (state) {
+      $('repo').value = lastRepo;
+      renderStats();
+      renderTree($('tree'), state.tree, buildEffMap());
+      recompute();
+    }
+  }
+
+  // Re-paint the shell (and results, if any) when language changes.
+  onLangChange(paint);
+
+  paint();
 }

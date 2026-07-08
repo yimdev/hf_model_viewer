@@ -1,7 +1,8 @@
-/* engine/util.js — 并发受限工具 */
+/* engine/util.js — Concurrency-limited utility */
 
 /**
- * 以固定并发上限遍历 items 执行 fn（避免 160+ 分片同时发起请求打爆浏览器）。
+ * Iterate items with a fixed concurrency cap, running fn on each (avoids
+ * firing 160+ shard requests at once and overwhelming the browser).
  */
 export async function mapLimit(items, limit, fn) {
   let i = 0;

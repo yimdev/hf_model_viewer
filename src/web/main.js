@@ -1,4 +1,4 @@
-/* Web 形态入口：GitHub Pages 静态站点 */
+/* Web entry: GitHub Pages static site */
 import { mountApp } from '../ui/app.js';
 
 const root = document.getElementById('app');

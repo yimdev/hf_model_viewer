@@ -1,14 +1,16 @@
 /* ============================================================
- * platform/net.js — 网络抽象层（双形态核心）
+ * platform/net.js — Network abstraction layer (dual-form core)
  * ------------------------------------------------------------
- * 设计目标：业务核心（engine / vram / tree）不依赖具体运行环境。
- *  - Web 形态：直接调用浏览器全局 fetch。
- *  - 扩展形态（Manifest V3）：所有请求路由到 Background Service Worker，
- *    由其在 manifest 声明的 host_permissions 下发起，从而突破网页端 CORS。
+ * Design goal: business core (engine / vram / tree) does not depend on the
+ * runtime environment.
+ *  - Web form: calls the browser global fetch directly.
+ *  - Extension form (Manifest V3): all requests route to the Background
+ *    Service Worker, which issues them under the host_permissions declared in
+ *    the manifest, bypassing page-side CORS.
  *
- * 暴露两个能力：
- *   net.text(url, headers)            -> 完整文本
- *   net.range(url, start, end, headers) -> 指定字节区间的 Uint8Array
+ * Exposes two capabilities:
+ *   net.text(url, headers)             -> full text
+ *   net.range(url, start, end, headers) -> Uint8Array of the byte range
  * ============================================================ */
 
 const HF_UA = { 'User-Agent': 'hf-vram-estimator/1.0' };
@@ -23,8 +25,9 @@ function isExtensionContext() {
 }
 
 /**
- * 创建网络实例。扩展态下通过 chrome.runtime 与 background 通信；
- * 返回结构统一为 { ok, status, body: number[] }（body 为字节数组）。
+ * Perform a raw fetch. In extension context it talks to the background via
+ * chrome.runtime; the return shape is unified as { ok, status, body: number[] }
+ * (body is a byte array).
  */
 function rawFetch(url, { headers = {}, method = 'GET', range } = {}) {
   const h = { ...HF_UA, ...headers };
@@ -44,19 +47,19 @@ export function makeNet() {
   return {
     async text(url, headers = {}) {
       const r = await rawFetch(url, { headers });
-      if (!r.ok) throw new Error(`HTTP ${r.status} 拉取失败: ${url}`);
+      if (!r.ok) throw new Error(`HTTP ${r.status} fetch failed: ${url}`);
       return new TextDecoder().decode(new Uint8Array(r.body));
     },
 
     async range(url, start, end, headers = {}) {
       const r = await rawFetch(url, { headers, range: [start, end] });
-      if (!r.ok) throw new Error(`HTTP ${r.status} Range 请求失败: ${url} (${start}-${end})`);
+      if (!r.ok) throw new Error(`HTTP ${r.status} Range request failed: ${url} (${start}-${end})`);
       return new Uint8Array(r.body);
     },
   };
 }
 
-/* 扩展 Background Service Worker 入口（仅在 ext 构建中被引用） */
+/* Extension Background Service Worker entry (referenced only in ext build). */
 export function installBackgroundNetHandler() {
   if (typeof chrome === 'undefined' || !chrome.runtime) return;
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
@@ -70,7 +73,7 @@ export function installBackgroundNetHandler() {
           sendResponse({ ok: false, status: 0, error: String(e) });
         }
       })();
-      return true; // 保持消息通道开放以支持异步响应
+      return true; // keep the message channel open for the async response
     }
     return false;
   });

@@ -1,8 +1,10 @@
-/* tree/buildTree.js — 智能参数树构建（支持 MoE）
+/* tree/buildTree.js — Smart parameter-tree builder (MoE-aware)
  * ------------------------------------------------------------
- * 输入：扁平张量列表 [{ name, dtype, shape, shard }]
- * 输出：结构化树，含逐层归类、MoE 专家坍缩、参数/字节统计。
- * 约定：参数量与精度无关，字节数由 UI 按所选精度实时换算。
+ * Input:  flat tensor list [{ name, dtype, shape, shard }]
+ * Output: structured tree with per-layer grouping, MoE expert collapse, and
+ *         param / byte statistics.
+ * Note: param count is precision-independent; bytes are computed live by the
+ *       UI from the selected precision.
  * ------------------------------------------------------------ */
 
 export function tensorParams(shape) {
@@ -10,7 +12,7 @@ export function tensorParams(shape) {
   return shape.reduce((a, b) => a * b, 1);
 }
 
-// 匹配层级索引：绝大多数现代模型含 ".数字." 段作为 layer 下标
+// Match layer index: most modern models encode the layer subscript as a ".N." segment.
 const LAYER_RE = /\.(\d+)\./;
 const EXPERT_RE = /experts\.(\d+)\./;
 
@@ -33,8 +35,8 @@ export function buildTree(tensors) {
   const layers = new Map(); // index -> { index, attn:[], mlp:[], norm:[], other:[], experts:Map }
   const nonLayer = new Map(); // group -> [tensors]
 
-  let baseParams = 0; // 非专家（稠密）参数
-  let expertParams = 0; // 全部 MoE 专家参数
+  let baseParams = 0; // non-expert (dense) params
+  let expertParams = 0; // all MoE expert params
 
   for (const t of tensors) {
     const params = tensorParams(t.shape);
@@ -56,7 +58,7 @@ export function buildTree(tensors) {
         const ei = em ? parseInt(em[1], 10) : 0;
         if (!layer.experts.has(ei)) layer.experts.set(ei, []);
         layer.experts.get(ei).push(t);
-        expertParams += params; // 计入专家总量（展示时按 ×N 坍缩）
+        expertParams += params; // counted into expert total (collapsed by ×N at display)
       } else {
         layer[kind].push(t);
         baseParams += params;
@@ -69,7 +71,7 @@ export function buildTree(tensors) {
     }
   }
 
-  // 将专家 map 坍缩为单一代表（取专家 0），记录总数
+  // Collapse expert map into a single representative (expert 0), record the count.
   let numExperts = 0;
   let isMoe = false;
   const layerArr = [];
@@ -90,7 +92,7 @@ export function buildTree(tensors) {
     if (expertIdxs.length) {
       isMoe = true;
       numExperts = Math.max(numExperts, expertIdxs.length);
-      const rep = layer.experts.get(expertIdxs[0]); // 代表专家（形状与其他专家一致）
+      const rep = layer.experts.get(expertIdxs[0]); // representative expert (same shape as others)
       let perExpertParams = 0;
       for (const t of rep) perExpertParams += t.params;
       const count = expertIdxs.length;

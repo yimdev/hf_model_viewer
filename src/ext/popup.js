@@ -1,5 +1,6 @@
-/* 扩展形态入口：浏览器扩展 Popup
- * 复用与 Web 完全相同的业务核心与 UI 编排；网络请求经 background service worker 代理。 */
+/* Extension entry: browser extension Popup.
+ * Reuses the exact same business core and UI orchestration as the web;
+ * network requests are proxied through the background service worker. */
 import { mountApp } from '../ui/app.js';
 import '../styles.css';
 

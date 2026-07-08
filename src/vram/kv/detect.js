@@ -1,11 +1,15 @@
-/* vram/kv/detect.js — 注意力架构识别 + 张量几何解析（共享工具）
+/* vram/kv/detect.js — Attention-arch detection + tensor geometry parsing (shared utils)
  * ------------------------------------------------------------
- * 本文件与 mha.js / mla.js / dsa.js 同处一个目录，专司两件事：
- *   1) 推断架构：detectAttnArch（基于 config.json）/ detectArchFromTensors（基于张量名）
- *   2) 把原始张量列表解析成「代表层」的注意力张量清单，供各架构模块消费。
+ * This file sits in the same directory as mha.js / mla.js / dsa.js and does
+ * two things:
+ *   1) Detect the arch: detectAttnArch (from config.json) /
+ *      detectArchFromTensors (from tensor names).
+ *   2) Parse the raw tensor list into a "representative layer" attention
+ *      tensor set, consumed by each arch module.
  *
- * 设计原则：KV Cache 只统计「落入显存」的张量；层数 L 直接由张量名层号推出
- *   （不依赖 config 的 num_hidden_layers / num_layers 字段差异）。
+ * Design principle: KV Cache counts only tensors that LAND in VRAM; the layer
+ * count L comes directly from tensor name indices (no reliance on config's
+ * num_hidden_layers / num_layers naming differences).
  * ------------------------------------------------------------ */
 
 const GB = 1024 ** 3;
@@ -14,31 +18,34 @@ export function num(v, d = 1) {
   return Number.isFinite(v) ? v : d;
 }
 
-/** 从张量名解析层号；支持 layers.N / layer.N / h.N / blocks.N / transformer.layers.N */
+/** Parse the layer index from a tensor name; supports layers.N / layer.N /
+ *  h.N / blocks.N / transformer.layers.N. */
 export function layerOf(name) {
   const m = name.match(/(?:^|[._])(?:layers?|h|blocks?)\.(\d+)\./);
   if (m) return +m[1];
   return -1;
 }
 
-/** 是否注意力相关张量（排除 mlp / experts / ffn / moe 等非注意力块；含 DSA 索引器） */
+/** Whether a tensor is attention-related (excludes mlp / experts / ffn / moe;
+ *  includes DSA indexer). */
 export function isAttnTensor(name) {
   if (/(?:mlp|expert|ffn|moe)/i.test(name)) return false;
   return /(?:attn|attention|self_attn|kv|k_proj|v_proj|q_proj|query_key_value|qkv|indexer|index_key|index_k)/i.test(name);
 }
 
-/** Linear 权重 [out, in] 的输出维度 = shape[0] */
+/** Linear weight [out, in] output dim = shape[0]. */
 export function outDim(meta) {
   const s = meta && meta.shape;
   return Array.isArray(s) && s.length >= 1 ? s[0] : NaN;
 }
 
 /**
- * 解析张量列表，抽取「代表层」的注意力张量。
- * 代表层选择：注意力张量数量最多的层（平局取层号最大者），比单纯取最大层号更稳健
- *   （避免末层结构缺失导致 K/V 投影不完整）。
+ * Parse the tensor list, extracting attention tensors of the "representative
+ * layer". Representative layer = the one with the most attention tensors
+ * (ties broken by larger layer index), more robust than just taking the max
+ * layer (avoids an incomplete last layer missing K/V projections).
  * @returns {{L:number, sampleLayer:number, attnNames:string[], byName:Map}|null}
- *          无层号信息（如纯 embedding）返回 null，交由 config 回退。
+ *          null when no layer index is found (e.g. pure embedding) -> config fallback.
  */
 export function extractLayerTensors(tensors) {
   if (!Array.isArray(tensors) || tensors.length === 0) return null;
@@ -53,7 +60,7 @@ export function extractLayerTensors(tensors) {
   if (layerSet.size === 0) return null;
   const L = Math.max(...layerSet) + 1;
 
-  // 代表层 = 注意力张量最多者；平局取层号最大
+  // Representative layer = most attention tensors; tie -> largest layer index.
   let repLayer = -1;
   let repCount = -1;
   for (const lyr of layerSet) {
@@ -72,8 +79,8 @@ export function extractLayerTensors(tensors) {
 }
 
 /**
- * 基于 config.json 推断架构，优先级：dsa > mla > mha。
- * 仅用于「张量无法纯形状拆分」时的 config 超参回退路径。
+ * Detect arch from config.json; priority dsa > mla > mha.
+ * Only used as the config fallback when tensors can't be split by shape.
  */
 export function detectAttnArch(config = {}) {
   const arch = Array.isArray(config.architectures) ? config.architectures.join(' ') : '';
@@ -89,8 +96,8 @@ export function detectAttnArch(config = {}) {
 }
 
 /**
- * 基于代表层注意力张量名推断架构：dsa > mla > mha。
- * 返回 'dsa' | 'mla' | 'mha' | null（null 表示融合 QKV 等无法纯形状识别的情形）。
+ * Detect arch from representative-layer attention tensor names: dsa > mla > mha.
+ * Returns 'dsa' | 'mla' | 'mha' | null (null = fused QKV, can't split by shape).
  */
 export function detectArchFromTensors(attnNames = []) {
   const has = (re) => attnNames.some((n) => re.test(n));
