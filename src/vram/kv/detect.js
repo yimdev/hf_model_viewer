@@ -85,6 +85,16 @@ export function extractLayerTensors(tensors) {
 export function detectAttnArch(config = {}) {
   const arch = Array.isArray(config.architectures) ? config.architectures.join(' ') : '';
   const modelType = config.model_type || '';
+  // DeepSeek-V4: NSA + MLA latent. Detect BEFORE the generic index_* heuristic,
+  // because V4 also exposes index_head_dim / index_topk (which would otherwise
+  // be misclassified as V3.2 DSA, whose formula does not apply to V4).
+  if (
+    modelType === 'deepseek_v4' ||
+    /deepseekv4/i.test(arch) ||
+    /DeepseekV4ForCausalLM/i.test(arch)
+  ) {
+    return 'deepseek_v4';
+  }
   const hasDSA =
     config.index_head_dim !== undefined ||
     config.index_topk !== undefined ||
@@ -102,6 +112,8 @@ export function detectAttnArch(config = {}) {
 export function detectArchFromTensors(attnNames = []) {
   const has = (re) => attnNames.some((n) => re.test(n));
   if (has(/indexer|lightning|index_key|index_k/i)) return 'dsa';
+  // DeepSeek-V4: MLA latent (attn.wkv.weight) + NSA compressor (attn.compressor.*).
+  if (has(/attn\.wkv\.weight/i) && has(/compressor/i)) return 'deepseek_v4';
   if (has(/kv_a_proj|kv_b_proj|kv_proj|kv_a_layernorm/i)) return 'mla';
   if (has(/(^|[._])k_proj/i) && has(/(^|[._])v_proj/i)) return 'mha';
   return null;

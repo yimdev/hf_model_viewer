@@ -15,6 +15,16 @@ import { renderChart, COLORS } from './chart.js';
 import { fmtNum, fmtGB, esc } from './format.js';
 import { t, getLang, setLang, onLangChange } from '../i18n.js';
 
+// Attention-arch badge labels (attnArch value -> friendly display).
+const ARCH_LABEL = {
+  mha: 'MHA',
+  gqa: 'GQA',
+  mqa: 'MQA',
+  mla: 'MLA',
+  dsa: 'DSA',
+  deepseek_v4: 'DeepSeek-V4 (NSA)',
+};
+
 // Read model max context length: prefer max_position_embeddings, fall back
 // to max_sequence_length / max_position_embedding.
 function getMaxContextLength(config) {
@@ -151,7 +161,7 @@ export function mountApp(rootEl) {
     summaryEl.innerHTML = `
       <div class="hw-note" style="font-size:13px">${esc(t('sum.total'))}<b>${fmtGB(est.vTotal)}</b> ｜ ${esc(t('sum.weights'))} ${fmtGB(est.vWeights)} ｜ KV ${est.kvUnknown ? '—' : fmtGB(est.vKV)} ｜ ${esc(t('sum.overhead'))} ${fmtGB(est.vOverhead)}</div>
       ${est.weightNote ? `<div class="hw-note">${esc(t('sum.weightStrategy'))}${esc(est.weightNote)}</div>` : ''}
-      ${est.kvFormulaLabel ? `<div class="hw-note">${esc(t('sum.attnArch'))}<span class="tag ${esc(est.attnArch)}">${esc(est.attnArch.toUpperCase())}</span> ｜ ${esc(t('sum.kvFormula'))}${esc(est.kvFormulaLabel)}</div>` : ''}
+      ${est.kvFormulaLabel ? `<div class="hw-note">${esc(t('sum.attnArch'))}<span class="tag ${esc(est.attnArch)}">${esc(ARCH_LABEL[est.attnArch] || est.attnArch.toUpperCase())}</span> ｜ ${esc(t('sum.kvFormula'))}${esc(est.kvFormulaLabel)}</div>` : ''}
       ${est.kvNote ? `<div class="hw-note dsa-note">${esc(est.kvNote)}</div>` : ''}
     `;
   }

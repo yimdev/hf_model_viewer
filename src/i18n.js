@@ -140,6 +140,18 @@ const STR = {
     zh: 'DSA 主要削减计算量 O(L²)→O(L·topk) 与加载带宽；KV 容量≈稠密 MLA+索引器，几乎不降。',
     en: 'DSA mainly cuts compute O(L²)→O(L·topk) and load bandwidth; KV capacity ≈ dense MLA + indexer, barely reduced.',
   },
+  'kv.v4.tensor': {
+    zh: 'DeepSeek-V4 NSA（张量推导 wkv 潜变量 + 逐层 compress_ratio）',
+    en: 'DeepSeek-V4 NSA (tensor-derived wkv latent + per-layer compress_ratio)',
+  },
+  'kv.v4.config': {
+    zh: 'DeepSeek-V4 NSA (head_dim / compress_ratios / window_size)',
+    en: 'DeepSeek-V4 NSA (head_dim / compress_ratios / window_size)',
+  },
+  'kv.v4.note': {
+    zh: 'DeepSeek-V4 原生稀疏注意力：每层 KV 缓存 = (滑动窗口 {window} + S/压缩比) × {hd} 潜向量（MLA 风格单潜变量，非逐头 K/V）；压缩比=4 的层额外存 (S/4) × {ihd} 的 indexer 选择缓存。默认按 BF16 估算（启用 FP8 KV 缓存约减半）。',
+    en: 'DeepSeek-V4 Native Sparse Attention: per-layer KV cache = (sliding window {window} + S/compress_ratio) × {hd} latent (MLA-style single latent, not per-head K/V); layers with compress_ratio=4 additionally store (S/4) × {ihd} indexer selection cache. Estimated at BF16 by default (enabling FP8 KV cache roughly halves it).',
+  },
 
   // Weight strategy notes
   'weight.native': {
@@ -169,6 +181,7 @@ const STR = {
   'err.missingLayers': { zh: '缺少 num_hidden_layers', en: 'Missing num_hidden_layers' },
   'err.missingAttn': { zh: '缺注意力头配置', en: 'Missing attention head config' },
   'err.missingKvLora': { zh: '缺 kv_lora_rank', en: 'Missing kv_lora_rank' },
+  'err.missingHeadDim': { zh: '缺 head_dim，无法计算 KV 缓存', en: 'Missing head_dim; cannot compute KV cache' },
 
   // Language toggle
   'lang.label': { zh: '语言', en: 'Language' },

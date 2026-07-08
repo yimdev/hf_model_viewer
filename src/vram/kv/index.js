@@ -15,14 +15,15 @@
  *      index_head_dim -> add the FP8 indexer.
  *
  * Returns: { vKV, attnArch, formulaLabel, note, kvUnknown?, kvMethod }
- *   attnArch ∈ { 'mha' | 'gqa' | 'mqa' | 'mla' | 'dsa' } (lowercase, maps
- *     directly to UI badges)
+ *   attnArch ∈ { 'mha' | 'gqa' | 'mqa' | 'mla' | 'dsa' | 'deepseek_v4' }
+ *     (lowercase, maps directly to UI badges)
  *   kvMethod ∈ { 'tensors' | 'config' }
  * ------------------------------------------------------------ */
 
 import mha from './mha.js';
 import mla from './mla.js';
 import dsa from './dsa.js';
+import deepseekV4 from './deepseek_v4.js';
 import { DSA_NOTE_KEY } from './dsa.js';
 import {
   detectAttnArch,
@@ -33,7 +34,7 @@ import {
 } from './detect.js';
 import { t } from '../../i18n.js';
 
-const REGISTRY = { mha, mla, dsa };
+const REGISTRY = { mha, mla, dsa, deepseek_v4: deepseekV4 };
 
 /**
  * Unified entry point: compute KV Cache.
