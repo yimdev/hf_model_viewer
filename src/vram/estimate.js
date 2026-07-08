@@ -75,10 +75,14 @@ function isProtectedTensor(name) {
  * overview can expand them.
  * ------------------------------------------------------------ */
 const EXPERT_TOKEN_RE = /experts\.\d+/i;
+const SHARED_EXPERT_RE = /shared_experts?/i;
 function categorizeTensor(name) {
   if (/embed_tokens/i.test(name)) return 'embedding';
   if (/lm_head/i.test(name)) return 'lmhead';
   if (EXPERT_TOKEN_RE.test(name)) return 'expert';
+  // Shared (always-active) expert is a distinct category, NOT part of the
+  // routed-expert (×N) group even though its name also contains "experts".
+  if (SHARED_EXPERT_RE.test(name)) return 'sharedExpert';
   const lm = name.match(/\.(\d+)\./);
   if (lm) {
     const remainder = name.slice(lm.index + lm[0].length);
@@ -86,7 +90,7 @@ function categorizeTensor(name) {
     // would be misclassified as attention.
     if (/norm/i.test(remainder)) return 'norm';
     if (/(?:^|[._])(?:mlp|ffn)/i.test(remainder)) return 'mlp';
-    if (/(?:^|[._])(?:self_attn|attention)/i.test(remainder)) return 'attn';
+    if (/(?:^|[._])(?:self_attn|attention|attn)/i.test(remainder)) return 'attn';
     return 'other';
   }
   if (/norm/i.test(name)) return 'norm';
@@ -209,6 +213,7 @@ export function estimateVRAM(
     other: { labelKey: 'cat.other', group: 'weight' },
     lmhead: { labelKey: 'cat.lmhead', group: 'weight' },
     expert: { labelKey: 'cat.expert', group: 'moe' },
+    sharedExpert: { labelKey: 'cat.sharedExpert', group: 'moe' },
   };
   const composition = [];
   if (w) {

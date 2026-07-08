@@ -203,10 +203,12 @@ export function mountApp(rootEl) {
       ? config.architectures.join(', ')
       : config.model_type || '—';
     const moe = tree.isMoe ? t('stat.moeYes', { n: tree.numExperts }) : t('stat.no');
+    const shared = tree.hasSharedExperts ? t('stat.sharedYes') : '';
     $('stats').innerHTML = `
       <div class="stat">${esc(t('stat.totalParams'))}<b>${fmtNum(tree.totalParams)}</b></div>
       <div class="stat">${esc(t('stat.layers'))}<b>${tree.numLayers}</b></div>
       <div class="stat">${esc(t('stat.moe'))}<b>${moe}</b></div>
+      ${shared ? `<div class="stat">${esc(t('stat.moe'))}<b style="color:#be185d">${esc(shared)}</b></div>` : ''}
       <div class="stat">${esc(t('stat.arch'))}<b style="font-size:13px">${esc(arch)}</b></div>
       <div class="stat">${esc(t('stat.shards'))}<b>${state.shardCount ?? '—'}</b></div>
     `;

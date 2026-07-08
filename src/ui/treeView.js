@@ -46,6 +46,11 @@ function buildByteMap(tree, map) {
       layerBytes += eb;
       m.set('e:' + i, eb);
     }
+    if (layer.sharedExperts) {
+      const sb = layer.sharedExperts.tensors.reduce((s, tn) => s + tensorByte(tn, map), 0);
+      layerBytes += sb;
+      m.set('se:' + i, sb);
+    }
     m.set('l:' + i, layerBytes);
   });
   return m;
@@ -81,11 +86,26 @@ function expertsHTML(layer, map, i) {
   const totalBytes = rep.reduce((a, tn) => a + tensorByte(tn, map), 0) * e.count;
   return `
     <details class="block">
-      <summary>MoE Experts <span class="tag moe">×${e.count}</span>
+      <summary>${esc(t('tree.moeExperts'))} <span class="tag moe">×${e.count}</span>
         <span class="meta">${fmtNum(repTotal * e.count)} ${t('tree.paramsUnit')} · <span class="byte-cell" data-key="e:${i}">${fmtGB(totalBytes)}</span></span>
       </summary>
       <p class="note">${esc(t('tree.expertNote', { n: e.count }))}</p>
       ${tensorTable(rep, map)}
+    </details>`;
+}
+
+function sharedExpertsHTML(layer, map, i) {
+  const se = layer.sharedExperts;
+  if (!se) return '';
+  const total = se.params;
+  const bytes = se.tensors.reduce((a, tn) => a + tensorByte(tn, map), 0);
+  return `
+    <details class="block">
+      <summary>${esc(t('tree.sharedExpert'))} <span class="tag shared">1</span>
+        <span class="meta">${fmtNum(total)} ${t('tree.paramsUnit')} · <span class="byte-cell" data-key="se:${i}">${fmtGB(bytes)}</span></span>
+      </summary>
+      <p class="note">${esc(t('tree.sharedExpertNote'))}</p>
+      ${tensorTable(se.tensors, map)}
     </details>`;
 }
 
@@ -102,11 +122,15 @@ function layerHTML(i, layer, map) {
     const rep = layer.experts.representative || [];
     layerBytes += rep.reduce((s, tn) => s + tensorByte(tn, map), 0) * layer.experts.count;
   }
+  if (layer.sharedExperts) {
+    layerBytes += layer.sharedExperts.tensors.reduce((s, tn) => s + tensorByte(tn, map), 0);
+  }
   const meta = `<span class="meta"><b>${fmtNum(layer.layerParams)}</b> ${t('tree.paramsUnit')} · <span class="byte-cell" data-key="l:${i}">${fmtGB(layerBytes)}</span></span>`;
   const inner =
     blockHTML('Self-Attention', layer.attn, map, `l:${i}:attn`) +
-    blockHTML(t('tree.mlpDense'), layer.mlp, map, `l:${i}:mlp`) +
     (layer.experts ? expertsHTML(layer, map, i) : '') +
+    (layer.sharedExperts ? sharedExpertsHTML(layer, map, i) : '') +
+    blockHTML(t('tree.mlpDense'), layer.mlp, map, `l:${i}:mlp`) +
     blockHTML('Norm', layer.norm, map, `l:${i}:norm`) +
     blockHTML('Other', layer.other, map, `l:${i}:other`);
   return `<details class="layer"><summary>Layer ${i} ${meta}</summary>${inner}</details>`;

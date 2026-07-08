@@ -14,12 +14,19 @@ export function tensorParams(shape) {
 
 // Match layer index: most modern models encode the layer subscript as a ".N." segment.
 const LAYER_RE = /\.(\d+)\./;
+// Routed expert: requires an integer index, e.g. experts.0 / experts.127.
 const EXPERT_RE = /experts\.(\d+)\./;
+// Shared (always-active) expert: e.g. shared_expert / shared_experts. Must be
+// tested BEFORE the routed-expert regex because "shared_experts" also contains
+// the substring "experts." but never carries an integer index.
+const SHARED_EXPERT_RE = /shared_experts?/i;
 
 function classifyLayer(remainder) {
   if (remainder.startsWith('self_attn') || remainder.startsWith('attention')) return 'attn';
-  if (remainder.includes('experts.')) return 'expert';
-  if (remainder.startsWith('mlp')) return 'mlp';
+  if (/^attn/i.test(remainder)) return 'attn';
+  if (SHARED_EXPERT_RE.test(remainder)) return 'sharedExpert';
+  if (EXPERT_RE.test(remainder)) return 'expert';
+  if (remainder.startsWith('mlp') || remainder.startsWith('ffn')) return 'mlp';
   if (/norm/.test(remainder)) return 'norm';
   return 'other';
 }
@@ -32,11 +39,11 @@ function classifyNonLayer(name) {
 }
 
 export function buildTree(tensors) {
-  const layers = new Map(); // index -> { index, attn:[], mlp:[], norm:[], other:[], experts:Map }
+  const layers = new Map(); // index -> { index, attn:[], mlp:[], norm:[], other:[], experts:Map, sharedExperts:[] }
   const nonLayer = new Map(); // group -> [tensors]
 
-  let baseParams = 0; // non-expert (dense) params
-  let expertParams = 0; // all MoE expert params
+  let baseParams = 0; // non-expert (dense) params, incl. shared experts
+  let expertParams = 0; // routed MoE expert params only (collapsed by ×N at display)
 
   for (const t of tensors) {
     const params = tensorParams(t.shape);
@@ -49,7 +56,7 @@ export function buildTree(tensors) {
       const kind = classifyLayer(remainder);
 
       if (!layers.has(li)) {
-        layers.set(li, { index: li, attn: [], mlp: [], norm: [], other: [], experts: new Map() });
+        layers.set(li, { index: li, attn: [], mlp: [], norm: [], other: [], experts: new Map(), sharedExperts: [] });
       }
       const layer = layers.get(li);
 
@@ -59,6 +66,11 @@ export function buildTree(tensors) {
         if (!layer.experts.has(ei)) layer.experts.set(ei, []);
         layer.experts.get(ei).push(t);
         expertParams += params; // counted into expert total (collapsed by ×N at display)
+      } else if (kind === 'sharedExpert') {
+        // Shared expert is always active (dense-like): counted once per layer,
+        // NOT multiplied by the routed-expert count.
+        layer.sharedExperts.push(t);
+        baseParams += params;
       } else {
         layer[kind].push(t);
         baseParams += params;
@@ -74,6 +86,7 @@ export function buildTree(tensors) {
   // Collapse expert map into a single representative (expert 0), record the count.
   let numExperts = 0;
   let isMoe = false;
+  let hasSharedExperts = false;
   const layerArr = [];
   const maxIdx = layers.size ? Math.max(...layers.keys()) : -1;
   for (let i = 0; i <= maxIdx; i++) {
@@ -101,7 +114,18 @@ export function buildTree(tensors) {
       layerParams += totalParams;
     }
 
-    layerArr.push({ ...layer, layerParams, experts });
+    // Shared expert: a single always-active expert per layer (gate/up/down …).
+    let sharedExperts = null;
+    const seTensors = layer.sharedExperts || [];
+    if (seTensors.length) {
+      hasSharedExperts = true;
+      let seParams = 0;
+      for (const t of seTensors) seParams += t.params;
+      sharedExperts = { count: 1, params: seParams, tensors: seTensors };
+      layerParams += seParams;
+    }
+
+    layerArr.push({ ...layer, layerParams, experts, sharedExperts });
   }
 
   const totalParams = baseParams + expertParams;
@@ -116,6 +140,7 @@ export function buildTree(tensors) {
     expertParams,
     isMoe,
     numExperts,
+    hasSharedExperts,
   };
 }
 

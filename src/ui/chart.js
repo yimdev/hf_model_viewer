@@ -15,6 +15,7 @@ export const COLORS = {
   other: '#64748b',
   lmhead: '#d97706',
   expert: '#7c3aed',
+  sharedExpert: '#c026d3',
   kv: '#db2777',
   overhead: '#94a3b8',
   weight: '#2563eb',

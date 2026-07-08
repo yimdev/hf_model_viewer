@@ -17,7 +17,7 @@
 - **通用 KV Cache 推导**：优先从张量形状（厂商无关）推导 KV 缓存，不依赖各家命名不一致的 `config` 超参；仅在融合 QKV 等无法纯形状拆分时回退到 `config`。
 - **多架构支持**：MHA / GQA / MQA / MLA（DeepSeek 系）/ DSA（DeepSeek V3.2 稀疏注意力）/ DeepSeek-V4 NSA（原生稀疏注意力 + MLA 潜变量，逐层 `compress_ratio` 与 indexer 选择缓存）。
 - **按模块量化策略**：`uniform`（全量化）/` keep-fp16`（仅 Linear）/ `native`（按磁盘实际 dtype）。尊重已预量化的权重——本就是 FP4 就按 FP4 计。
-- **细粒度组成明细**：总览按张量类别（嵌入 / 注意力 / MLP / 归一化 / LM Head / MoE 专家）拆解显存，并叠加 KV 与开销。
+- **细粒度组成明细**：总览按张量类别（嵌入 / 注意力 / MLP / 归一化 / LM Head / MoE 路由专家 / 共享专家）拆解显存，并叠加 KV 与开销。共享专家（始终激活，每模型 1 个）与路由专家（×N，每 token 仅激活少数）在界面与组成中清晰区分。
 - **双形态分发**：同一份源码同时构建为 GitHub Pages 静态站点与浏览器扩展。
 - **中英双语界面**：Web 与扩展均提供中文 / English 一键切换，选择记忆在本地。
 
@@ -77,7 +77,7 @@ BUILD_TARGET=ext npm run build:ext
 - **Generic KV Cache derivation** — derives KV cache primarily from tensor shapes (vendor-neutral), not from each vendor's differently-named `config` hyper-params; falls back to `config` only when shapes can't be split (e.g. fused QKV).
 - **Multi-architecture** — MHA / GQA / MQA / MLA (DeepSeek family) / DSA (DeepSeek V3.2 sparse attention) / DeepSeek-V4 NSA (Native Sparse Attention + MLA latent, per-layer `compress_ratio` and indexer selection cache).
 - **Per-module quantization strategy** — `uniform` (quantize all) / `keep-fp16` (Linear only) / `native` (use on-disk dtype). Respects pre-quantized weights — already FP4 stays FP4.
-- **Fine-grained composition** — overview breaks VRAM down by tensor category (embedding / attention / MLP / norm / LM Head / MoE experts), plus KV and overhead.
+- **Fine-grained composition** — overview breaks VRAM down by tensor category (embedding / attention / MLP / norm / LM Head / MoE routed experts / shared expert), plus KV and overhead. The shared expert (always active, exactly 1 per layer) is clearly separated from the routed experts (×N, only a few active per token).
 - **Dual-form delivery** — one source tree builds both a GitHub Pages static site and a browser extension.
 - **Bilingual UI** — web and extension both offer one-click Chinese / English switching, persisted locally.
 

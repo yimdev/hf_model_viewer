@@ -326,6 +326,7 @@ table.ops code {
   margin-left: 6px;
 }
 .tag.moe { background: #ede9fe; color: #6d28d9; }
+.tag.shared { background: #fce7f3; color: #be185d; }
 .tag.dsa { background: #fef3c7; color: #b45309; font-weight: 700; }
 .tag.mla { background: #e0f2fe; color: #0369a1; }
 .tag.mha { background: #f1f5f9; color: #475569; }
