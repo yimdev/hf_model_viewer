@@ -62,3 +62,38 @@ test('Complete VRAM Estimate forwards ragged sequence lengths to the Profile', (
   assert.equal(result.complete, true);
   assert.equal(result.kvBuffers.reduce((sum, buffer) => sum + buffer.bytes, 0), 6 * 95_232);
 });
+
+test('weight composition merges standalone numeric tensor-name segments and sorts by size', () => {
+  const result = estimateVRAM(
+    { architectures: ['UnknownForCausalLM'] },
+    { totalParams: 10, baseParams: 10, expertParams: 0 },
+    {
+      tensors: [
+        {
+          name: 'language_model.model.layers.0.self_attn.k_norm.weight',
+          shape: [2],
+          dtype: 'BF16',
+        },
+        {
+          name: 'language_model.model.layers.1.self_attn.k_norm.weight',
+          shape: [3],
+          dtype: 'BF16',
+        },
+        {
+          name: 'language_model.model.layers.0.self_attn.q_proj.weight',
+          shape: [4],
+          dtype: 'BF16',
+        },
+      ],
+    },
+  );
+
+  const weights = result.composition.filter((item) => item.group === 'weight');
+  assert.deepEqual(
+    weights.map((item) => [item.label, item.gb]),
+    [
+      ['language_model.model.layers.*.self_attn.k_norm.weight', 10 / (1024 ** 3)],
+      ['language_model.model.layers.*.self_attn.q_proj.weight', 8 / (1024 ** 3)],
+    ],
+  );
+});

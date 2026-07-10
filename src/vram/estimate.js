@@ -59,10 +59,7 @@ function isProtectedTensor(name) {
 }
 
 /* ------------------------------------------------------------
- * Tensor categorization (for the fine-grained composition breakdown).
- * Consistent with buildTree's grouping but finer — the dense base layers are
- * split into embedding / attention / MLP / norm / other / LM Head so the
- * overview can expand them.
+ * Tensor categorization remains only for the dense / routed-expert totals.
  * ------------------------------------------------------------ */
 const EXPERT_TOKEN_RE = /experts\.\d+/i;
 const SHARED_EXPERT_RE = /shared_experts?/i;
@@ -85,6 +82,13 @@ function categorizeTensor(name) {
   }
   if (/norm/i.test(name)) return 'norm';
   return 'other';
+}
+
+function normalizeTensorName(name) {
+  return name
+    .split('.')
+    .map((segment) => (/^(?:0|[1-9]\d*)$/.test(segment) ? '*' : segment))
+    .join('.');
 }
 
 /**
@@ -110,13 +114,13 @@ function effBppFor(t, { targetPrecision, strategy }) {
 
 /**
  * Compute weight bytes per tensor (also produces effBppMap for tree
- * reconciliation and byCategory for the fine-grained breakdown).
- * @returns {{totalBytes:number, baseBytes:number, expertBytes:number, effBppMap:Map, byCategory:Map}|null}
+ * reconciliation and byTensorName for the overview chart).
+ * @returns {{totalBytes:number, baseBytes:number, expertBytes:number, effBppMap:Map, byTensorName:Map}|null}
  */
 export function computeWeightBytes(tensors, opts = {}) {
   if (!Array.isArray(tensors) || !tensors.length) return null;
   const map = new Map();
-  const byCategory = new Map();
+  const byTensorName = new Map();
   let totalBytes = 0, baseBytes = 0, expertBytes = 0;
   for (const t of tensors) {
     const params = t.params != null ? t.params : tensorParams(t.shape);
@@ -124,12 +128,13 @@ export function computeWeightBytes(tensors, opts = {}) {
     map.set(t.name, eff);
     const b = params * eff;
     totalBytes += b;
+    const normalizedName = normalizeTensorName(t.name);
+    byTensorName.set(normalizedName, (byTensorName.get(normalizedName) || 0) + b);
     const cat = categorizeTensor(t.name);
-    byCategory.set(cat, (byCategory.get(cat) || 0) + b);
     if (cat === 'expert') expertBytes += b;
     else baseBytes += b;
   }
-  return { totalBytes, baseBytes, expertBytes, effBppMap: map, byCategory };
+  return { totalBytes, baseBytes, expertBytes, effBppMap: map, byTensorName };
 }
 
 export function buildEffBppMap(tensors, opts) {
@@ -186,33 +191,19 @@ export function estimateVRAM(
   const complete = !kvUnknown && Number.isFinite(vKV);
   const vTotal = complete ? vWeights + vKV + vOverhead : null;
 
-  // Fine-grained composition (for overview breakdown): split weights by
-  // tensor category, then add KV / overhead.
-  const CAT_META = {
-    embedding: { labelKey: 'cat.embedding', group: 'weight' },
-    attn: { labelKey: 'cat.attn', group: 'weight' },
-    mlp: { labelKey: 'cat.mlp', group: 'weight' },
-    norm: { labelKey: 'cat.norm', group: 'weight' },
-    other: { labelKey: 'cat.other', group: 'weight' },
-    lmhead: { labelKey: 'cat.lmhead', group: 'weight' },
-    expert: { labelKey: 'cat.expert', group: 'moe' },
-    sharedExpert: { labelKey: 'cat.sharedExpert', group: 'moe' },
-  };
+  // Overview composition: merge weights by tensor name after replacing every
+  // standalone numeric path segment with "*", then add KV / overhead.
   const composition = [];
   if (w) {
-    for (const [key, meta] of Object.entries(CAT_META)) {
-      // Only list a category that actually exists in this model (byCategory hit);
-      // a dense model has no experts -> "MoE expert layers" is hidden. A present
-      // but tiny category is still shown truthfully.
-      if (!w.byCategory.has(key)) continue;
-      const gb = (w.byCategory.get(key) || 0) / GB;
-      composition.push({ key, labelKey: meta.labelKey, group: meta.group, gb });
+    for (const [key, bytes] of w.byTensorName) {
+      composition.push({ key, label: key, colorKey: 'weight', group: 'weight', gb: bytes / GB });
     }
   } else {
-    composition.push({ key: 'weight', labelKey: 'cat.weight', group: 'weight', gb: vWeights });
+    composition.push({ key: 'weight', labelKey: 'cat.weight', colorKey: 'weight', group: 'weight', gb: vWeights });
   }
-  if (complete) composition.push({ key: 'kv', labelKey: 'cat.kv', group: 'kv', gb: vKV });
-  composition.push({ key: 'overhead', labelKey: 'cat.overhead', group: 'overhead', gb: vOverhead });
+  if (complete) composition.push({ key: 'kv', labelKey: 'cat.kv', colorKey: 'kv', group: 'kv', gb: vKV });
+  composition.push({ key: 'overhead', labelKey: 'cat.overhead', colorKey: 'overhead', group: 'overhead', gb: vOverhead });
+  composition.sort((a, b) => b.gb - a.gb || a.key.localeCompare(b.key));
 
   // Chart decomposition (already uses per-tensor effective bytes).
   return {

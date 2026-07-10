@@ -11,8 +11,8 @@ import { analyze } from '../engine/index.js';
 import { buildTensorNameTree, buildTree, groupRepeatedTensorSubtrees } from '../tree/index.js';
 import { estimateVRAM, buildEffBppMap } from '../vram/index.js';
 import { renderTree, updateTreeBytes } from './treeView.js';
-import { renderChart, COLORS } from './chart.js';
-import { fmtGiBAuto, fmtNum, fmtGB, esc } from './format.js';
+import { renderChart } from './chart.js';
+import { fmtNum, fmtGB, esc } from './format.js';
 import { t, getLang, setLang, onLangChange } from '../i18n.js';
 
 // Read model max context length: prefer max_position_embeddings, fall back
@@ -88,10 +88,7 @@ function buildLayout() {
     <section class="overview">
       <h2>${esc(t('ov.title'))}</h2>
       <div class="summary-grid" id="stats"><div class="empty">${esc(t('ctl.empty'))}</div></div>
-      <div class="overview-visuals">
-        <div class="overview-chart"><canvas id="chart"></canvas></div>
-        <div id="comp" class="comp-wrap"><div class="empty">${esc(t('ctl.empty'))}</div></div>
-      </div>
+      <div class="overview-chart"><canvas id="chart"></canvas></div>
       <h3 class="overview-section-title">${esc(t('ov.kvTitle'))}</h3>
       <div id="kvdetails" class="kv-details"><div class="empty">${esc(t('ctl.empty'))}</div></div>
     </section>
@@ -145,7 +142,6 @@ export function mountApp(rootEl) {
     });
 
     renderChart($('chart'), est);
-    renderOverviewComposition(est);
     renderKVDetails(est);
     updateTreeBytes($('tree'), state.tensorNameTree, buildEffMap());
 
@@ -217,36 +213,6 @@ export function mountApp(rootEl) {
         <tfoot><tr><th colspan="4">${esc(t('group.kv'))}</th><th class="num">${esc(fmtNum(est.kvBuffers.reduce((sum, buffer) => sum + buffer.bytes, 0)))} B<br><span>${esc(fmtGB(est.vKV))}</span></th><th></th></tr></tfoot>
       </table></div>
       <details class="kv-evidence"><summary>${esc(t('kv.evidence'))}</summary><ul>${evidence}</ul></details>`;
-  }
-
-  function renderOverviewComposition(est) {
-    const compEl = $('comp');
-    if (!est.composition || !est.composition.length) {
-      compEl.innerHTML = `<div class="empty">${esc(t('ctl.empty'))}</div>`;
-      return;
-    }
-    const total = est.complete ? est.vTotal : null;
-    const groups = [
-      { key: 'weight', title: t('group.weight') },
-      { key: 'moe', title: t('group.moe') },
-      { key: 'kv', title: t('group.kv') },
-      { key: 'overhead', title: t('group.overhead') },
-    ];
-    let html = '<div class="comp">';
-    for (const g of groups) {
-      const items = est.composition.filter((c) => c.group === g.key);
-      if (!items.length) continue;
-      const sub = items.reduce((s, c) => s + c.gb, 0);
-      html += `<div class="comp-group"><div class="comp-ghead"><span>${esc(g.title)}</span><b>${fmtGiBAuto(sub)}</b></div>`;
-      for (const it of items) {
-        const pct = total > 0 ? (it.gb / total) * 100 : null;
-        const color = COLORS[it.key] || '#94a3b8';
-        html += `<div class="comp-row"><span class="dot" style="background:${color}"></span><span class="comp-name">${esc(t(it.labelKey))}</span><span class="comp-val">${fmtGiBAuto(it.gb)}${pct == null ? '' : ` · ${pct.toFixed(1)}%`}</span></div>`;
-      }
-      html += '</div>';
-    }
-    html += '</div>';
-    compEl.innerHTML = html;
   }
 
   function renderStats() {
