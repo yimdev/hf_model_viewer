@@ -40,6 +40,7 @@ const STR = {
 
   // Result summary card
   'sum.total': { zh: '总显存需求：', en: 'Total VRAM: ' },
+  'sum.maxContext': { zh: '最大上下文：', en: 'Max context: ' },
   'sum.weights': { zh: '权重', en: 'Weights' },
   'sum.kv': { zh: 'KV', en: 'KV' },
   'sum.kvProfile': { zh: '模型架构档案：', en: 'Architecture Profile: ' },
@@ -74,7 +75,7 @@ const STR = {
   'stat.totalParams': { zh: '总参数', en: 'Total params' },
   'stat.layers': { zh: '层数', en: 'Layers' },
   'stat.moe': { zh: 'MoE', en: 'MoE' },
-  'stat.moeYes': { zh: '是 × {n} 路由专家', en: 'Yes × {n} routed experts' },
+  'stat.moeYes': { zh: '是 × {n} 路由专家/层', en: 'Yes × {n} routed experts / layer' },
   'stat.no': { zh: '否', en: 'No' },
   'stat.arch': { zh: '架构', en: 'Arch' },
   'stat.shards': { zh: '分片数', en: 'Shards' },
