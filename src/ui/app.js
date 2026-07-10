@@ -8,7 +8,7 @@
 
 import '../styles.css';
 import { analyze } from '../engine/index.js';
-import { buildTensorNameTree, buildTree } from '../tree/index.js';
+import { buildTensorNameTree, buildTree, groupRepeatedTensorSubtrees } from '../tree/index.js';
 import { estimateVRAM, buildEffBppMap } from '../vram/index.js';
 import { renderTree, updateTreeBytes } from './treeView.js';
 import { renderChart, COLORS } from './chart.js';
@@ -286,7 +286,7 @@ export function mountApp(rootEl) {
       state = {
         config: result.config,
         tree: buildTree(result.tensors),
-        tensorNameTree: buildTensorNameTree(result.tensors),
+        tensorNameTree: groupRepeatedTensorSubtrees(buildTensorNameTree(result.tensors)),
         tensors: result.tensors,
         shardCount: result.shardCount,
       };

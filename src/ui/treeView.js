@@ -1,9 +1,10 @@
-/* ui/treeView.js — Left-to-right Tensor Name Tree
+/* ui/treeView.js — Left-to-right Tensor Name Tree with Repeated Tensor Groups
  * ------------------------------------------------------------
  * Branches show cumulative dot-delimited prefixes. Single-child chains are
  * compressed into one visible row, while true branches remain independently
  * collapsible. A Numeric Path Branch starts closed;
- * named branches start open. Leaves retain the original tensor metadata.
+ * named branches start open. Bottom-up equivalent subtrees share one visible
+ * Repeated Tensor Group while statistics retain every original tensor.
  * ------------------------------------------------------------ */
 
 import { fmtNum, fmtBytesGB, esc } from './format.js';
@@ -20,6 +21,19 @@ function effBpp(name, effectiveBppByTensorName) {
 
 function tensorByte(tensor, effectiveBppByTensorName) {
   return pCount(tensor) * effBpp(tensor.name, effectiveBppByTensorName);
+}
+
+function collectTensorStats(tensors, effectiveBppByTensorName) {
+  let params = 0;
+  let bytes = 0;
+
+  for (const tensor of tensors) {
+    const tensorBytes = tensorByte(tensor, effectiveBppByTensorName);
+    params += pCount(tensor);
+    bytes += tensorBytes;
+  }
+
+  return { params, bytes, tensors: tensors.length };
 }
 
 function pathLabel(prefix) {
@@ -44,50 +58,46 @@ function collapseSingleChild(node) {
   return { node: current, containsNumeric };
 }
 
-function collectSubtreeStats(node, effectiveBppByTensorName, visitor) {
-  let params = 0;
-  let bytes = 0;
-  let tensors = 0;
-
-  for (const tensor of node.tensors) {
-    const tensorBytes = tensorByte(tensor, effectiveBppByTensorName);
-    params += pCount(tensor);
-    bytes += tensorBytes;
-    tensors += 1;
-    visitor.tensor(tensor, tensorBytes);
-  }
+function collectSubtreeStats(node, effectiveBppByTensorName, onNode) {
+  const ownStats = collectTensorStats(node.tensors, effectiveBppByTensorName);
+  let { params, bytes, tensors } = ownStats;
   for (const child of node.children) {
-    const childStats = collectSubtreeStats(child, effectiveBppByTensorName, visitor);
+    const childStats = collectSubtreeStats(child, effectiveBppByTensorName, onNode);
     params += childStats.params;
     bytes += childStats.bytes;
     tensors += childStats.tensors;
   }
 
   const stats = { params, bytes, tensors };
-  visitor.node(node, stats);
+  onNode(node, stats);
   return stats;
 }
 
 function createStats(tree, effectiveBppByTensorName) {
   const cache = new WeakMap();
-  collectSubtreeStats(tree, effectiveBppByTensorName, {
-    tensor() {},
-    node(node, stats) {
-      cache.set(node, stats);
-    },
+  collectSubtreeStats(tree, effectiveBppByTensorName, (node, stats) => {
+    cache.set(node, stats);
   });
 
   return (node) => cache.get(node);
 }
 
-function tensorLeaf(tensor, effectiveBppByTensorName, depth) {
+function repeatBadge(node) {
+  return node.repeatCount > 1
+    ? `<span class="tensor-repeat" title="${esc(t('tree.repeatCopies', { count: node.repeatCount }))}">×${fmtNum(node.repeatCount)}</span>`
+    : '';
+}
+
+function tensorLeaf(node, effectiveBppByTensorName, depth) {
+  const tensor = node.tensors[0];
+  const stats = collectTensorStats(node.tensors, effectiveBppByTensorName);
   return `
     <div class="tensor-leaf" style="--tree-depth:${depth}">
-      <div class="tensor-path">${pathLabel(tensor.name)}</div>
+      <div class="tensor-path">${pathLabel(tensor.name)}${repeatBadge(node)}</div>
       <code class="tensor-shape">${esc(tensor.shape.join('×'))}</code>
       <code class="tensor-dtype">${esc(tensor.dtype)}</code>
-      <span class="tensor-number">${fmtNum(pCount(tensor))}</span>
-      <span class="tensor-number byte-cell" data-key="t:${esc(tensor.name)}">${fmtBytesGB(tensorByte(tensor, effectiveBppByTensorName))}</span>
+      <span class="tensor-number">${fmtNum(stats.params)}</span>
+      <span class="tensor-number byte-cell" data-key="p:${esc(node.prefix)}">${fmtBytesGB(stats.bytes)}</span>
     </div>`;
 }
 
@@ -96,14 +106,16 @@ function renderVisibleNode(start, effectiveBppByTensorName, statsFor, depth) {
   const node = collapsed.node;
 
   if (node.children.length === 0) {
-    return node.tensors.map((tensor) => tensorLeaf(tensor, effectiveBppByTensorName, depth)).join('');
+    return tensorLeaf(node, effectiveBppByTensorName, depth);
   }
 
   const stats = statsFor(node);
   const directEntries = node.directChildCount;
   const open = collapsed.containsNumeric ? '' : ' open';
   const numericClass = collapsed.containsNumeric ? ' numeric-branch' : '';
-  const terminalRows = node.tensors.map((tensor) => tensorLeaf(tensor, effectiveBppByTensorName, depth + 1)).join('');
+  const terminalRows = node.tensors.length > 0
+    ? tensorLeaf(node, effectiveBppByTensorName, depth + 1)
+    : '';
   const childRows = node.children
     .map((child) => renderVisibleNode(child, effectiveBppByTensorName, statsFor, depth + 1))
     .join('');
@@ -113,6 +125,7 @@ function renderVisibleNode(start, effectiveBppByTensorName, statsFor, depth) {
       <summary style="--tree-depth:${depth}">
         <span class="tensor-path">${pathLabel(node.prefix)}</span>
         <span class="tensor-child-count">(${directEntries})</span>
+        ${repeatBadge(node)}
         <span class="tensor-chevron" aria-hidden="true"></span>
         <span class="tensor-branch-meta">${fmtNum(stats.params)} ${esc(t('tree.paramsUnit'))} · <span class="byte-cell" data-key="p:${esc(node.prefix)}">${fmtBytesGB(stats.bytes)}</span></span>
       </summary>
@@ -122,13 +135,8 @@ function renderVisibleNode(start, effectiveBppByTensorName, statsFor, depth) {
 
 function buildByteMap(tree, effectiveBppByTensorName) {
   const bytes = new Map();
-  collectSubtreeStats(tree, effectiveBppByTensorName, {
-    tensor(tensor, tensorBytes) {
-      bytes.set(`t:${tensor.name}`, tensorBytes);
-    },
-    node(node, stats) {
-      bytes.set(`p:${node.prefix}`, stats.bytes);
-    },
+  collectSubtreeStats(tree, effectiveBppByTensorName, (node, stats) => {
+    bytes.set(`p:${node.prefix}`, stats.bytes);
   });
   return bytes;
 }

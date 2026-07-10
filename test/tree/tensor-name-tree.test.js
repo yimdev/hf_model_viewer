@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { buildTensorNameTree } from '../../src/tree/index.js';
+import { buildTensorNameTree, groupRepeatedTensorSubtrees } from '../../src/tree/index.js';
 
 function child(node, segment) {
   return node.children.find((candidate) => candidate.segment === segment);
@@ -81,5 +81,42 @@ test('keeps leaf metadata without assigning architecture semantics', () => {
     'prefix',
     'segment',
     'tensors',
+  ]);
+});
+
+test('builds Repeated Tensor Groups from matching Numeric Path Branches', () => {
+  const tensors = [
+    { name: 'model.layers.0.self_attn.q.weight', shape: [8, 8], dtype: 'BF16' },
+    { name: 'model.layers.0.self_attn.k.weight', shape: [8, 8], dtype: 'BF16' },
+    { name: 'model.layers.0.mlp.up.weight', shape: [16, 8], dtype: 'BF16' },
+    { name: 'model.layers.1.self_attn.q.weight', shape: [8, 8], dtype: 'BF16' },
+    { name: 'model.layers.1.self_attn.k.weight', shape: [8, 8], dtype: 'BF16' },
+    { name: 'model.layers.1.mlp.up.weight', shape: [16, 8], dtype: 'BF16' },
+    { name: 'model.layers.2.self_attn.q.weight', shape: [4, 8], dtype: 'BF16' },
+    { name: 'model.layers.2.self_attn.k.weight', shape: [8, 8], dtype: 'BF16' },
+    { name: 'model.layers.2.mlp.up.weight', shape: [16, 8], dtype: 'BF16' },
+    { name: 'model.layers.3.self_attn.q.weight', shape: [8, 8], dtype: 'F32' },
+    { name: 'model.layers.3.self_attn.k.weight', shape: [8, 8], dtype: 'BF16' },
+    { name: 'model.layers.3.mlp.up.weight', shape: [16, 8], dtype: 'BF16' },
+  ];
+
+  const grouped = groupRepeatedTensorSubtrees(buildTensorNameTree(tensors));
+  const layers = descendant(grouped, 'model', 'layers');
+
+  assert.equal(layers.directChildCount, 3);
+  assert.equal(layers.children[0].repeatCount, 2);
+  assert.deepEqual(layers.children[0].members.map((node) => node.prefix), [
+    'model.layers.0',
+    'model.layers.1',
+  ]);
+  assert.deepEqual(layers.children.slice(1).map((node) => node.repeatCount), [1, 1]);
+
+  const repeatedAttention = descendant(layers.children[0], 'self_attn');
+  const repeatedWeight = descendant(repeatedAttention, 'q', 'weight');
+  assert.equal(repeatedAttention.directChildCount, 2);
+  assert.equal(repeatedWeight.repeatCount, 2);
+  assert.deepEqual(repeatedWeight.tensors.map((tensor) => tensor.name), [
+    'model.layers.0.self_attn.q.weight',
+    'model.layers.1.self_attn.q.weight',
   ]);
 });

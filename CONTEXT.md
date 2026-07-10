@@ -51,3 +51,7 @@ _Avoid_: Layer View, architecture tree
 **Numeric Path Branch**:
 A Tensor Name Tree branch whose accumulated path contains a standalone non-negative integer segment; it is independently collapsible and carries no inferred Layer or Expert meaning.
 _Avoid_: Layer ID, Expert ID, architecture inference
+
+**Repeated Tensor Group**:
+A bottom-up display group of numeric sibling subtrees whose normalized relative keys, terminal Shapes, and terminal DTypes are identical; one representative is displayed with its actual copy count, while parameters and bytes include every original tensor. The public `groupRepeatedTensorSubtrees` operation creates these groups.
+_Avoid_: Architecture-based grouping, representative-only VRAM, shape-only grouping

@@ -290,6 +290,20 @@ input[type="range"] { width: 100%; accent-color: var(--primary); }
 .tensor-path-parent { color: #a0a8b5; }
 .tensor-path-current { color: var(--text); font-weight: 600; }
 .tensor-child-count { color: var(--muted); font-variant-numeric: tabular-nums; }
+.tensor-repeat {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 4px;
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: #e8eef8;
+  color: var(--primary-d);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.4;
+  white-space: nowrap;
+  vertical-align: 1px;
+}
 .tensor-chevron {
   width: 7px;
   height: 7px;

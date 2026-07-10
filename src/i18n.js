@@ -116,10 +116,11 @@ const STR = {
   'tree.col.params': { zh: '参数量', en: 'Params' },
   'tree.col.vram': { zh: '显存', en: 'VRAM' },
   'tree.prefixHint': {
-    zh: '按名称从左到右展开；包含数字片段的分支默认折叠。',
-    en: 'Expand names from left to right; branches containing numeric segments start collapsed.',
+    zh: '按名称从左到右展开；相对 key 结构、Shape 与 DType 相同的重复结构从叶子向上聚合，并标记实际份数。',
+    en: 'Expand names from left to right; repeated structures with matching relative keys, Shapes, and DTypes are grouped from leaves upward and show their actual copy count.',
   },
   'tree.paramsUnit': { zh: '参数', en: 'params' },
+  'tree.repeatCopies': { zh: '{count} 份实际副本', en: '{count} actual copies' },
 
   // Chart
   'chart.vramLabel': { zh: '显存占用 (GB)', en: 'VRAM usage (GB)' },
