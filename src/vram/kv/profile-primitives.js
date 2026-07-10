@@ -1,3 +1,4 @@
+/* Shared representation and validation primitives; no model layout formulas live here. */
 const GB = 1024 ** 3;
 const SEMANTIC_DTYPE_BYTES = Object.freeze({ BF16: 2, F32: 4 });
 
@@ -12,9 +13,21 @@ export function tensorMatches(byName, name, shape, dtype) {
   return tensor && tensor.dtype === dtype && sameArray(tensor.shape, shape);
 }
 
-export function validateSequenceWorkload({ batch, seq, sequenceLengths, maxContext }) {
+export function validateSequenceWorkload({
+  batch,
+  seq,
+  sequenceLengths,
+  maxContext,
+  minimumBatch = 0,
+  allowEmptySequenceLengths = true,
+}) {
   if (sequenceLengths != null) {
-    if (!Array.isArray(sequenceLengths) || sequenceLengths.length === 0) {
+    if (!Array.isArray(sequenceLengths)) {
+      return {
+        error: 'profile_input_out_of_range', details: { sequenceLengths: 'expected an array', maxContext },
+      };
+    }
+    if (!allowEmptySequenceLengths && sequenceLengths.length === 0) {
       return {
         error: 'profile_input_out_of_range',
         details: { sequenceLengths: 'expected a non-empty array', maxContext },
@@ -42,7 +55,13 @@ export function validateSequenceWorkload({ batch, seq, sequenceLengths, maxConte
     return { entries, tokenCount, ragged: true };
   }
 
-  if (!Number.isInteger(batch) || batch < 1 || !Number.isInteger(seq) || seq < 0 || seq > maxContext) {
+  if (
+    !Number.isInteger(batch)
+    || batch < minimumBatch
+    || !Number.isInteger(seq)
+    || seq < 0
+    || seq > maxContext
+  ) {
     return { error: 'profile_input_out_of_range', details: { batch, seq, maxContext } };
   }
   const tokenCount = batch * seq;

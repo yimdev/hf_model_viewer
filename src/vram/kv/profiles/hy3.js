@@ -1,6 +1,6 @@
 import {
   makeBuffer, sameArray, tensorMatches, validateSequenceWorkload, verifiedResult,
-} from '../profile-result.js';
+} from '../profile-primitives.js';
 
 const PROFILE = Object.freeze({
   id: 'hy3-instruct-semantic-bf16-v1',

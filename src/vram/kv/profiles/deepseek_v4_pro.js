@@ -1,6 +1,6 @@
 import {
   makeBuffer, sameArray, tensorMatches, validateSequenceWorkload, verifiedResult,
-} from '../profile-result.js';
+} from '../profile-primitives.js';
 
 const COMPRESS_RATIOS = [
   128, 128, 4, 128, 4, 128, 4, 128, 4, 128, 4, 128, 4, 128, 4, 128, 4, 128, 4, 128,
@@ -158,7 +158,12 @@ function layerGroup(label, indices) {
 
 function compute({ batch, seq, sequenceLengths }) {
   const workload = validateSequenceWorkload({
-    batch, seq, sequenceLengths, maxContext: 1048576,
+    batch,
+    seq,
+    sequenceLengths,
+    maxContext: 1048576,
+    minimumBatch: 1,
+    allowEmptySequenceLengths: false,
   });
   if (workload.error) return workload;
   const sum = (calculate) => workload.entries.reduce(

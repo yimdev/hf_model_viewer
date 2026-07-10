@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { computeKV, resolveProfileCandidate } from '../../src/vram/kv/index.js';
-import { makeBuffer } from '../../src/vram/kv/profile-result.js';
+import { makeBuffer } from '../../src/vram/kv/profile-primitives.js';
 import { deepseekV4ProFixture, glm52Fixture, hy3Fixture } from './profile-fixtures.js';
 
 test('unsupported Model Class Identifier fails closed without a heuristic estimate', () => {
@@ -332,6 +332,25 @@ test('DeepSeek V4 Pro rejects a zero-sized scalar batch', () => {
 
   assert.equal(result.status, 'unsupported');
   assert.equal(result.vKV, null);
+  assert.equal(result.diagnostic.code, 'profile_input_out_of_range');
+});
+
+test('GLM 5.2 and Hy3 preserve their verified zero-workload semantics', () => {
+  for (const fixture of [glm52Fixture(), hy3Fixture()]) {
+    const zeroBatch = computeKV({ ...fixture, batch: 0, seq: 128 });
+    const emptyRagged = computeKV({ ...fixture, sequenceLengths: [] });
+
+    assert.equal(zeroBatch.status, 'verified', fixture.config.architectures[0]);
+    assert.equal(zeroBatch.totalBytes, 0, fixture.config.architectures[0]);
+    assert.equal(emptyRagged.status, 'verified', fixture.config.architectures[0]);
+    assert.equal(emptyRagged.totalBytes, 0, fixture.config.architectures[0]);
+  }
+});
+
+test('DeepSeek V4 Pro rejects an empty ragged batch', () => {
+  const result = computeKV({ ...deepseekV4ProFixture(), sequenceLengths: [] });
+
+  assert.equal(result.status, 'unsupported');
   assert.equal(result.diagnostic.code, 'profile_input_out_of_range');
 });
 

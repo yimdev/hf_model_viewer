@@ -8,4 +8,4 @@ Blocked by: 01, 02, 03
 
 ## Answer
 
-三个完整布局分别位于 `src/vram/kv/profiles/`。共享 `profile-result.js` 只构造 buffer、执行安全整数/字节换算、汇总与 verified/unknown 结果；所有层组、保留策略和公式都由 Profile 本地定义并由端到端 golden tests 覆盖。
+三个完整布局分别位于 `src/vram/kv/profiles/`。共享 `profile-primitives.js` 只提供精确 metadata 比较、Profile 自选政策的 workload 范围校验、buffer 安全整数/字节换算、汇总与 verified/unknown 结果；所有层组、保留策略和公式都由 Profile 本地定义并由端到端 golden tests 覆盖。

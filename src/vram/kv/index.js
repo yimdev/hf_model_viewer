@@ -7,7 +7,7 @@
  */
 
 import { profileCandidates } from './catalog.js';
-import { modelClassIdentifiers, unknownResult } from './profile-result.js';
+import { modelClassIdentifiers, unknownResult } from './profile-primitives.js';
 
 export function resolveProfileCandidate(candidates, input) {
   const evaluations = candidates.map((profile) => {

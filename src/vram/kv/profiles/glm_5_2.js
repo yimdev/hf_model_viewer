@@ -1,6 +1,6 @@
 import {
   makeBuffer, sameArray, tensorMatches, validateSequenceWorkload, verifiedResult,
-} from '../profile-result.js';
+} from '../profile-primitives.js';
 
 const FULL_INDEXER_LAYERS = [
   0, 1, 2, 6, 10, 14, 18, 22, 26, 30, 34, 38, 42, 46, 50, 54, 58, 62, 66, 70, 74,
