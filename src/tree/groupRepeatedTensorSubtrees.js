@@ -36,6 +36,12 @@ function bucketChildren(children, signatureFor) {
   return buckets;
 }
 
+function compareNumericPathSegmentsAscending(left, right) {
+  if (left.length !== right.length) return left.length - right.length;
+  if (left === right) return 0;
+  return left < right ? -1 : 1;
+}
+
 function groupMembers(members, signatureFor, repeatCount = 1, repeatIds = []) {
   const representative = members[0];
   const localBuckets = bucketChildren(representative.children, signatureFor);
@@ -44,7 +50,9 @@ function groupMembers(members, signatureFor, repeatCount = 1, repeatIds = []) {
       member.children.filter((child) => signatureFor(child) === signature)
     ));
     const localIds = localMembers.every((child) => child.numeric)
-      ? localMembers.map((child) => child.segment)
+      ? localMembers
+        .map((child) => child.segment)
+        .sort(compareNumericPathSegmentsAscending)
       : [];
     return groupMembers(allMembers, signatureFor, localMembers.length, localIds);
   });

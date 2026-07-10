@@ -151,3 +151,14 @@ test('reports nested Repeated Tensor Groups within local Numeric Path Branches',
   assert.equal(nestedWeight.repeatCount, 1);
   assert.equal(nestedWeight.tensors.length, 6);
 });
+
+test('orders Repeated Tensor Group IDs by ascending numeric value', () => {
+  const grouped = groupRepeatedTensorSubtrees(buildTensorNameTree([
+    { name: 'model.layers.2.weight', shape: [8, 8], dtype: 'BF16' },
+    { name: 'model.layers.10.weight', shape: [8, 8], dtype: 'BF16' },
+    { name: 'model.layers.3.weight', shape: [8, 8], dtype: 'BF16' },
+  ]));
+  const layers = descendant(grouped, 'model', 'layers');
+
+  assert.deepEqual(layers.children[0].repeatIds, ['2', '3', '10']);
+});

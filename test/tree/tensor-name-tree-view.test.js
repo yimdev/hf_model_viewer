@@ -31,3 +31,13 @@ test('highlights the next path segment when an expanded branch reveals a compres
     /<span class="tensor-path-parent">language_model\.model\.layers\.0\.mlp\.<\/span><span class="tensor-path-current">down_proj<\/span><span class="tensor-path-descendant">\.weight<\/span>/,
   );
 });
+
+test('shows local match IDs in ascending numeric order', () => {
+  const html = renderTensorNames([
+    'model.layers.2.weight',
+    'model.layers.10.weight',
+    'model.layers.3.weight',
+  ]);
+
+  assert.match(html, /3 local matches; IDs: 2, 3, 10/);
+});
