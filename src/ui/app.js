@@ -47,15 +47,6 @@ function buildLayout() {
     </details>
 
     <div class="field">
-      <label>${esc(t('ctl.quantPrecision'))}</label>
-      <div class="radios">
-        <label><input type="radio" name="q" value="fp16" checked /> FP16/BF16</label>
-        <label><input type="radio" name="q" value="int8" /> INT8</label>
-        <label><input type="radio" name="q" value="int4" /> INT4</label>
-      </div>
-    </div>
-
-    <div class="field">
       <label>${esc(t('ctl.batchSize'))}<span class="bubble" id="batchVal">1</span></label>
       <input type="range" id="batch" min="1" max="128" value="1" />
     </div>
@@ -101,14 +92,8 @@ export function mountApp(rootEl) {
 
   const $ = (id) => rootEl.querySelector('#' + id);
 
-  function getPrecision() {
-    const el = rootEl.querySelector('input[name="q"]:checked');
-    return el ? el.value : 'fp16';
-  }
-
-  // Effective per-parameter bytes for every tensor (matches the calculator).
   function buildEffMap() {
-    return buildEffBppMap(state.tensors, { targetPrecision: getPrecision() });
+    return buildEffBppMap(state.tensors);
   }
 
   function setStatus(msg, kind = '') {
@@ -119,12 +104,10 @@ export function mountApp(rootEl) {
 
   function recompute() {
     if (!state) return;
-    const precision = getPrecision();
     const batch = parseInt($('batch').value, 10) || 1;
     const seq = parseInt($('seq').value, 10) || 8192;
 
     const est = estimateVRAM(state.config, state.tree, {
-      precision,
       batch,
       seq,
       tensors: state.tensors,
@@ -209,12 +192,10 @@ export function mountApp(rootEl) {
       ? config.architectures.join(', ')
       : config.model_type || '—';
     const moe = tree.isMoe ? t('stat.moeYes', { n: tree.numExperts }) : t('stat.no');
-    const shared = tree.hasSharedExperts ? t('stat.sharedYes') : '';
     $('stats').innerHTML = `
       <div class="stat">${esc(t('stat.totalParams'))}<b>${fmtNum(tree.totalParams)}</b></div>
       <div class="stat">${esc(t('stat.layers'))}<b>${tree.numLayers}</b></div>
       <div class="stat">${esc(t('stat.moe'))}<b>${moe}</b></div>
-      ${shared ? `<div class="stat">${esc(t('stat.moe'))}<b style="color:#be185d">${esc(shared)}</b></div>` : ''}
       <div class="stat">${esc(t('stat.arch'))}<b style="font-size:13px">${esc(arch)}</b></div>
       <div class="stat">${esc(t('stat.shards'))}<b>${state.shardCount ?? '—'}</b></div>
     `;
@@ -294,8 +275,6 @@ export function mountApp(rootEl) {
         recompute();
       }),
     );
-
-    rootEl.querySelectorAll('input[name="q"]').forEach((r) => r.addEventListener('change', recompute));
 
     rootEl.querySelectorAll('.lang-btn').forEach((b) =>
       b.addEventListener('click', () => setLang(b.dataset.lang)),

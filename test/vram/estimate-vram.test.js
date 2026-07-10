@@ -9,7 +9,6 @@ test('Complete VRAM Estimate stays unknown when KV Cache is unsupported', () => 
     { architectures: ['UnknownForCausalLM'] },
     { totalParams: 100, baseParams: 100, expertParams: 0 },
     {
-      precision: 'fp16',
       batch: 1,
       seq: 1024,
       tensors: [
@@ -36,10 +35,10 @@ test('Verified Profile details flow through the complete VRAM Estimate', () => {
   const fixture = glm52Fixture();
   const tree = { totalParams: 1, baseParams: 1, expertParams: 0 };
   const fp16 = estimateVRAM(fixture.config, tree, {
-    precision: 'fp16', batch: 1, seq: 1, tensors: fixture.tensors,
+    batch: 1, seq: 1, tensors: fixture.tensors,
   });
   const int4 = estimateVRAM(fixture.config, tree, {
-    precision: 'int4', batch: 1, seq: 1, tensors: fixture.tensors,
+    batch: 1, seq: 1, tensors: fixture.tensors,
   });
 
   assert.equal(fp16.complete, true);
@@ -98,7 +97,7 @@ test('weight composition merges Tensor Name Patterns and sorts them by size', ()
   assert.deepEqual(
     weights.map((item) => [item.label, item.dtypes, item.gb]),
     [
-      ['language_model.model.layers.*.self_attn.k_norm.weight', ['BF16', 'F32'], 10 / (1024 ** 3)],
+      ['language_model.model.layers.*.self_attn.k_norm.weight', ['BF16', 'F32'], 16 / (1024 ** 3)],
       ['language_model.model.layers.*.self_attn.q_proj.weight', ['BF16'], 8 / (1024 ** 3)],
     ],
   );

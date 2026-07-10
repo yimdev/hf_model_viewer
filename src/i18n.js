@@ -29,7 +29,6 @@ const STR = {
   'ctl.analyze': { zh: '分析', en: 'Analyze' },
   'ctl.advanced': { zh: '高级（受限模型可选 Token）', en: 'Advanced (token for gated models)' },
   'ctl.tokenPlaceholder': { zh: 'hf_xxx（私有/受限仓库时填写）', en: 'hf_xxx (for private / gated repos)' },
-  'ctl.quantPrecision': { zh: '量化精度', en: 'Quantization precision' },
   'ctl.batchSize': { zh: 'Batch Size：', en: 'Batch Size: ' },
   'ctl.contextLength': { zh: '上下文长度', en: 'Context Length' },
 
@@ -77,7 +76,6 @@ const STR = {
   'stat.layers': { zh: '层数', en: 'Layers' },
   'stat.moe': { zh: 'MoE', en: 'MoE' },
   'stat.moeYes': { zh: '是 × {n} 路由专家', en: 'Yes × {n} routed experts' },
-  'stat.sharedYes': { zh: '含共享专家 1/层（始终激活）', en: 'Incl. shared expert 1/layer (always active)' },
   'stat.no': { zh: '否', en: 'No' },
   'stat.arch': { zh: '架构', en: 'Arch' },
   'stat.shards': { zh: '分片数', en: 'Shards' },
@@ -113,7 +111,6 @@ const STR = {
   'cat.other': { zh: '其他（稠密）', en: 'Other (dense)' },
   'cat.lmhead': { zh: 'LM Head', en: 'LM Head' },
   'cat.expert': { zh: 'MoE 路由专家层', en: 'MoE routed expert layers' },
-  'cat.sharedExpert': { zh: '共享专家（始终激活）', en: 'Shared expert (always active)' },
   'cat.weight': { zh: '权重（未细分）', en: 'Weights (unsplit)' },
   'cat.kv': { zh: 'KV Cache', en: 'KV Cache' },
 

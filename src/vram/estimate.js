@@ -2,7 +2,7 @@
  * ------------------------------------------------------------
  * Math model (Spec §4):
  *   Vtotal = Vweights + Vkv_cache
- *   Vweights = Σparams × B_precision / 1024^3
+ *   Vweights = Σparams × B_dtype / 1024^3
  *   Vkv_cache = Σ verified Architecture Profile buffer bytes / 1024^3
  *
  * KV Cache is fail-closed. A curated model-class catalog selects Architecture
@@ -14,22 +14,14 @@
 
 const GB = 1024 ** 3;
 
-const BPP = { fp16: 2, bf16: 2, int8: 1, int4: 0.5 };
-
 import { computeKV } from './kv/index.js';
 import { tensorParams } from '../tree/buildTree.js';
 import { isNumericPathSegment } from '../tree/pathSegments.js';
 
-export function bytesPerParam(precision) {
-  return BPP[precision] ?? 2;
-}
-
 /* ------------------------------------------------------------
  * On-disk dtype -> bytes per param (the ground truth for weight VRAM).
- * Every tensor in safetensors metadata carries its own dtype; if a model
- * is published already pre-quantized (INT4/FP4/FP8 …), its real footprint is
- * dictated by that dtype and must NOT be re-compressed or inflated by the
- * precision slider.
+ * Every tensor in safetensors metadata carries its own dtype; its real
+ * footprint is dictated by that dtype alone.
  * ------------------------------------------------------------ */
 const DTYPE_BYTES = {
   F64: 8, F32: 4, F16: 2, BF16: 2,
@@ -56,14 +48,10 @@ export function bytesForDtype(dtype, fallback = 2) {
  * Tensor categorization remains only for the dense / routed-expert totals.
  * ------------------------------------------------------------ */
 const EXPERT_TOKEN_RE = /experts\.\d+/i;
-const SHARED_EXPERT_RE = /shared_experts?/i;
 function categorizeTensor(name) {
   if (/embed_tokens/i.test(name)) return 'embedding';
   if (/lm_head/i.test(name)) return 'lmhead';
   if (EXPERT_TOKEN_RE.test(name)) return 'expert';
-  // Shared (always-active) expert is a distinct category, NOT part of the
-  // routed-expert (×N) group even though its name also contains "experts".
-  if (SHARED_EXPERT_RE.test(name)) return 'sharedExpert';
   const lm = name.match(/\.(\d+)\./);
   if (lm) {
     const remainder = name.slice(lm.index + lm[0].length);
@@ -86,23 +74,12 @@ function tensorNamePattern(name) {
 }
 
 /**
- * Effective bytes/param for a single tensor. The precision selector simulates
- * quantization for full-precision tensors, while pre-quantized tensors keep
- * their smaller on-disk footprint.
- */
-function effBppFor(t, { targetPrecision }) {
-  const nativeB = bytesForDtype(t.dtype, 2);
-  const targetB = BPP[targetPrecision] ?? 2;
-  return Math.min(nativeB, targetB);
-}
-
-/**
  * Compute weight bytes per tensor (also produces effBppMap for tree
  * reconciliation plus byte and DType indexes by Tensor Name Pattern for the
- * overview chart).
+ * overview chart). Every tensor uses its on-disk dtype bytes.
  * @returns {{totalBytes:number, baseBytes:number, expertBytes:number, effBppMap:Map, byTensorNamePattern:Map, dtypesByTensorNamePattern:Map}|null}
  */
-export function computeWeightBytes(tensors, opts = {}) {
+export function computeWeightBytes(tensors) {
   if (!Array.isArray(tensors) || !tensors.length) return null;
   const map = new Map();
   const byTensorNamePattern = new Map();
@@ -110,7 +87,7 @@ export function computeWeightBytes(tensors, opts = {}) {
   let totalBytes = 0, baseBytes = 0, expertBytes = 0;
   for (const t of tensors) {
     const params = t.params != null ? t.params : tensorParams(t.shape);
-    const eff = effBppFor(t, opts);
+    const eff = bytesForDtype(t.dtype, 2);
     map.set(t.name, eff);
     const b = params * eff;
     totalBytes += b;
@@ -132,14 +109,14 @@ export function computeWeightBytes(tensors, opts = {}) {
   };
 }
 
-export function buildEffBppMap(tensors, opts) {
-  return computeWeightBytes(tensors, opts)?.effBppMap ?? new Map();
+export function buildEffBppMap(tensors) {
+  return computeWeightBytes(tensors)?.effBppMap ?? new Map();
 }
 
 /**
  * @param {object} config    parsed model config.json
  * @param {object} tree      result of buildTree
- * @param {object} opts      { precision, batch, seq, sequenceLengths?, tensors? }
+ * @param {object} opts      { batch, seq, sequenceLengths?, tensors? }
  *        tensors: flat parsed tensor list (from analyze), used for weight accounting
  *                 and Architecture Profile signature validation
  */
@@ -147,27 +124,23 @@ export function estimateVRAM(
   config,
   tree,
   {
-    precision = 'fp16', batch = 1, seq = 8192, sequenceLengths = null,
+    batch = 1, seq = 8192, sequenceLengths = null,
     tensors = null,
   } = {},
 ) {
-  const bpp = bytesPerParam(precision);
   const totalParams = tree.totalParams;
 
-  // Weight VRAM: prefer per-tensor on-disk dtype. The slider only simulates
-  // quantization on full-precision tensors; pre-quantized layers use their
-  // smaller on-disk value.
-  const w = tensors && tensors.length ? computeWeightBytes(tensors, { targetPrecision: precision }) : null;
+  const w = tensors && tensors.length ? computeWeightBytes(tensors) : null;
   let vWeights, baseWeightsGB, moeWeightsGB;
   if (w) {
     vWeights = w.totalBytes / GB;
     baseWeightsGB = w.baseBytes / GB;
     moeWeightsGB = w.expertBytes / GB;
   } else {
-    // Fallback: no tensor detail -> uniform full-model × slider precision.
-    vWeights = (totalParams * bpp) / GB;
-    baseWeightsGB = (tree.baseParams * bpp) / GB;
-    moeWeightsGB = (tree.expertParams * bpp) / GB;
+    // Fallback: no tensor detail -> uniform 2 bytes per param.
+    vWeights = (totalParams * 2) / GB;
+    baseWeightsGB = (tree.baseParams * 2) / GB;
+    moeWeightsGB = (tree.expertParams * 2) / GB;
   }
   const kv = computeKV({ config, tensors, batch, seq, sequenceLengths });
   const vKV = kv.vKV;
@@ -193,15 +166,12 @@ export function estimateVRAM(
   }
   composition.sort((a, b) => b.gb - a.gb || a.key.localeCompare(b.key));
 
-  // Chart decomposition (already uses per-tensor effective bytes).
   return {
-    precision,
     complete,
     kvStatus: kv.status,
     kvProfile: kv.profile,
     kvBuffers: kv.buffers || [],
     kvDiagnostic: kv.diagnostic || null,
-    bpp,
     totalParams,
     vWeights,
     vKV,
