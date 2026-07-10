@@ -88,7 +88,9 @@ function buildLayout() {
     <section class="overview">
       <h2>${esc(t('ov.title'))}</h2>
       <div class="summary-grid" id="stats"><div class="empty">${esc(t('ctl.empty'))}</div></div>
-      <div class="overview-chart"><canvas id="chart"></canvas></div>
+      <div class="overview-chart" tabindex="0" aria-label="${esc(t('ov.title'))}">
+        <div class="overview-chart-content"><canvas id="chart"></canvas></div>
+      </div>
       <h3 class="overview-section-title">${esc(t('ov.kvTitle'))}</h3>
       <div id="kvdetails" class="kv-details"><div class="empty">${esc(t('ctl.empty'))}</div></div>
     </section>

@@ -11,6 +11,10 @@ const COLORS = {
   weight: '#2563eb',
 };
 
+const KEY_ROW_HEIGHT = 34;
+const AXIS_SPACE_HEIGHT = 56;
+const MAX_VISIBLE_KEYS = 10;
+
 let instance = null;
 
 const valueLabelsPlugin = {
@@ -42,7 +46,12 @@ export function renderChart(canvas, est) {
   });
 
   if (instance) instance.destroy();
-  canvas.parentElement.style.height = `${Math.max(320, comp.length * 34 + 56)}px`;
+  const content = canvas.parentElement;
+  const viewport = content.parentElement;
+  content.style.height = '';
+  const contentHeight = Math.max(content.clientHeight, comp.length * KEY_ROW_HEIGHT + AXIS_SPACE_HEIGHT);
+  content.style.height = `${contentHeight}px`;
+  viewport.style.height = `${Math.min(contentHeight, MAX_VISIBLE_KEYS * KEY_ROW_HEIGHT + AXIS_SPACE_HEIGHT)}px`;
 
   instance = new Chart(canvas, {
     type: 'bar',

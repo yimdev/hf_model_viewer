@@ -226,7 +226,16 @@ input[type="range"] { width: 100%; accent-color: var(--primary); }
   margin-bottom: 18px;
 }
 .overview h2, .tree h2 { margin: 0 0 12px; font-size: 15px; }
-.overview-chart { position: relative; min-width: 0; min-height: 320px; }
+.overview-chart {
+  --overview-chart-min-height: 320px;
+  position: relative;
+  min-width: 0;
+  min-height: var(--overview-chart-min-height);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+.overview-chart-content { position: relative; min-width: 0; min-height: var(--overview-chart-min-height); }
 .overview-section-title { margin: 18px 0 8px; font-size: 14px; color: var(--text); border-top: 1px dashed var(--border); padding-top: 12px; }
 
 .tree {
