@@ -50,3 +50,15 @@ test('Verified Profile details flow through the complete VRAM Estimate and ignor
   assert.equal(int4.vKV, fp16.vKV);
   assert.ok(Number.isFinite(fp16.vTotal));
 });
+
+test('Complete VRAM Estimate forwards ragged sequence lengths to the Profile', () => {
+  const fixture = glm52Fixture();
+  const result = estimateVRAM(
+    fixture.config,
+    { totalParams: 1, baseParams: 1, expertParams: 0 },
+    { tensors: fixture.tensors, sequenceLengths: [1, 2, 3] },
+  );
+
+  assert.equal(result.complete, true);
+  assert.equal(result.kvBuffers.reduce((sum, buffer) => sum + buffer.bytes, 0), 6 * 95_232);
+});

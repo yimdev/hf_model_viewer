@@ -80,7 +80,7 @@ const STR = {
   'kv.evidence': { zh: '第一方证据与固定 revision', en: 'First-party evidence and fixed revisions' },
   'kv.mismatches': { zh: '未命中条件：', en: 'Unmatched conditions: ' },
   'kv.diag.unknown': { zh: '未知诊断', en: 'Unknown diagnostic' },
-  'kv.diag.missing_model_architecture': { zh: 'config.architectures 缺失或为空', en: 'config.architectures is missing or empty' },
+  'kv.diag.missing_model_class_identifier': { zh: 'config.architectures 缺失或为空', en: 'config.architectures is missing or empty' },
   'kv.diag.unsupported_model_architecture': { zh: '模型类标识未进入人工审核目录', en: 'Model Class Identifier is not in the reviewed catalog' },
   'kv.diag.conflicting_architecture_profiles': { zh: '多个模型类标识指向冲突的 Profile', en: 'Model Class Identifiers resolve to conflicting Profiles' },
   'kv.diag.profile_signature_mismatch': { zh: '配置或张量签名与已审核 Profile 不一致', en: 'Config or tensor signature differs from the reviewed Profile' },

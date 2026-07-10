@@ -1,4 +1,6 @@
-import { makeBuffer, verifiedResult } from '../profile-result.js';
+import {
+  makeBuffer, sameArray, tensorMatches, validateSequenceWorkload, verifiedResult,
+} from '../profile-result.js';
 
 const PROFILE = Object.freeze({
   id: 'hy3-instruct-semantic-bf16-v1',
@@ -27,8 +29,8 @@ const PROFILE = Object.freeze({
     {
       id: 'hy3-vllm',
       label: 'vLLM HYV3 implementation',
-      revision: 'd0009ddb0b96e95bcfae6038e9b8673bd2263058',
-      url: 'https://github.com/vllm-project/vllm/blob/d0009ddb0b96e95bcfae6038e9b8673bd2263058/vllm/model_executor/models/hy_v3.py',
+      revision: '2d814a00820daec7082599bea75ae1d0959a346c',
+      url: 'https://github.com/vllm-project/vllm/blob/2d814a00820daec7082599bea75ae1d0959a346c/vllm/model_executor/models/hy_v3.py',
     },
     {
       id: 'hy3-preview-config',
@@ -62,17 +64,6 @@ const REQUIRED_CONFIG = {
   tie_word_embeddings: false,
   transformers_version: '5.6.0',
 };
-
-function sameArray(actual, expected) {
-  return Array.isArray(actual)
-    && actual.length === expected.length
-    && actual.every((value, index) => value === expected[index]);
-}
-
-function tensorMatches(byName, name, shape) {
-  const tensor = byName.get(name);
-  return tensor && tensor.dtype === 'BF16' && sameArray(tensor.shape, shape);
-}
 
 function match({ config, tensors }) {
   const mismatches = [];
@@ -112,26 +103,26 @@ function match({ config, tensors }) {
   const byName = new Map((Array.isArray(tensors) ? tensors : []).map((tensor) => [tensor.name, tensor]));
   for (let layer = 0; layer <= 80; layer++) {
     const prefix = `model.layers.${layer}.self_attn`;
-    if (!tensorMatches(byName, `${prefix}.q_proj.weight`, [8192, 4096])) {
+    if (!tensorMatches(byName, `${prefix}.q_proj.weight`, [8192, 4096], 'BF16')) {
       mismatches.push(`tensor.layers.${layer}.q_proj`);
     }
-    if (!tensorMatches(byName, `${prefix}.k_proj.weight`, [1024, 4096])) {
+    if (!tensorMatches(byName, `${prefix}.k_proj.weight`, [1024, 4096], 'BF16')) {
       mismatches.push(`tensor.layers.${layer}.k_proj`);
     }
-    if (!tensorMatches(byName, `${prefix}.v_proj.weight`, [1024, 4096])) {
+    if (!tensorMatches(byName, `${prefix}.v_proj.weight`, [1024, 4096], 'BF16')) {
       mismatches.push(`tensor.layers.${layer}.v_proj`);
     }
-    if (!tensorMatches(byName, `${prefix}.o_proj.weight`, [4096, 8192])) {
+    if (!tensorMatches(byName, `${prefix}.o_proj.weight`, [4096, 8192], 'BF16')) {
       mismatches.push(`tensor.layers.${layer}.o_proj`);
     }
-    if (!tensorMatches(byName, `${prefix}.q_norm.weight`, [128])) {
+    if (!tensorMatches(byName, `${prefix}.q_norm.weight`, [128], 'BF16')) {
       mismatches.push(`tensor.layers.${layer}.q_norm`);
     }
-    if (!tensorMatches(byName, `${prefix}.k_norm.weight`, [128])) {
+    if (!tensorMatches(byName, `${prefix}.k_norm.weight`, [128], 'BF16')) {
       mismatches.push(`tensor.layers.${layer}.k_norm`);
     }
     for (const norm of ['input_layernorm', 'post_attention_layernorm']) {
-      if (!tensorMatches(byName, `model.layers.${layer}.${norm}.weight`, [4096])) {
+      if (!tensorMatches(byName, `model.layers.${layer}.${norm}.weight`, [4096], 'BF16')) {
         mismatches.push(`tensor.layers.${layer}.${norm}`);
       }
     }
@@ -142,7 +133,9 @@ function match({ config, tensors }) {
     ['model.layers.80.hnorm.weight', [4096]],
     ['model.layers.80.final_layernorm.weight', [4096]],
   ]) {
-    if (!tensorMatches(byName, name, shape)) mismatches.push(`tensor.mtp.${name.split('.').at(-2)}`);
+    if (!tensorMatches(byName, name, shape, 'BF16')) {
+      mismatches.push(`tensor.mtp.${name.split('.').at(-2)}`);
+    }
   }
   for (const name of byName.keys()) {
     const layer = name.match(/^model\.layers\.(\d+)\./)?.[1];
@@ -154,22 +147,22 @@ function match({ config, tensors }) {
   return { matched: mismatches.length === 0, mismatches };
 }
 
-function compute({ batch, seq }) {
-  if (!Number.isInteger(batch) || batch < 0 || !Number.isInteger(seq) || seq < 0 || seq > 262144) {
-    return { error: 'profile_input_out_of_range', details: { batch, seq, maxContext: 262144 } };
-  }
-  const elementsPerBuffer = batch * seq * 80 * 8 * 128;
+function compute({ batch, seq, sequenceLengths }) {
+  const workload = validateSequenceWorkload({ batch, seq, sequenceLengths, maxContext: 262144 });
+  if (workload.error) return workload;
+  const elementsPerBuffer = workload.tokenCount * 80 * 8 * 128;
+  const tokenFormula = 'T = B × S or Σ sequence_lengths';
   const layerGroup = { label: 'all backbone layers', count: 80, range: [0, 79] };
   const buffers = [
     makeBuffer({
       id: 'main.key', label: 'Full-context normalized and RoPE key', layerGroup,
       elements: elementsPerBuffer, dtype: 'BF16', bytesPerElement: 2,
-      formula: 'B × S × 80 × 8 × 128', evidenceIds: ['hy3-config', 'hy3-vllm'],
+      formula: `T × 80 × 8 × 128; ${tokenFormula}`, evidenceIds: ['hy3-config', 'hy3-vllm'],
     }),
     makeBuffer({
       id: 'main.value', label: 'Full-context value', layerGroup,
       elements: elementsPerBuffer, dtype: 'BF16', bytesPerElement: 2,
-      formula: 'B × S × 80 × 8 × 128', evidenceIds: ['hy3-config', 'hy3-vllm'],
+      formula: `T × 80 × 8 × 128; ${tokenFormula}`, evidenceIds: ['hy3-config', 'hy3-vllm'],
     }),
   ];
   return verifiedResult({

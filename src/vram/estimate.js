@@ -6,9 +6,10 @@
  *   Vkv_cache = Σ verified Architecture Profile buffer bytes / 1024^3
  *   Voverhead = 2.0 + Vweights × 10%
  *
- * KV Cache is fail-closed. A curated model-class catalog selects one
- * Architecture Profile; that profile validates its full config+safetensors
- * signature before its dedicated layout returns an auditable buffer list.
+ * KV Cache is fail-closed. A curated model-class catalog selects Architecture
+ * Profile candidates; every candidate validates its full config+safetensors
+ * signature, and exactly one dedicated layout must match before returning an
+ * auditable buffer list.
  * Unknown or mismatched profiles keep KV and total VRAM unknown.
  * ------------------------------------------------------------ */
 
@@ -138,13 +139,17 @@ export function buildEffBppMap(tensors, opts) {
 /**
  * @param {object} config    parsed model config.json
  * @param {object} tree      result of buildTree
- * @param {object} opts      { precision, batch, seq, tensors? }
- *        tensors: flat parsed tensor list (from analyze), used for generic KV derivation
+ * @param {object} opts      { precision, batch, seq, sequenceLengths?, tensors? }
+ *        tensors: flat parsed tensor list (from analyze), used for weight accounting
+ *                 and Architecture Profile signature validation
  */
 export function estimateVRAM(
   config,
   tree,
-  { precision = 'fp16', batch = 1, seq = 8192, tensors = null, strategy = 'uniform' } = {},
+  {
+    precision = 'fp16', batch = 1, seq = 8192, sequenceLengths = null,
+    tensors = null, strategy = 'uniform',
+  } = {},
 ) {
   const bpp = bytesPerParam(precision);
   const totalParams = tree.totalParams;
@@ -172,7 +177,7 @@ export function estimateVRAM(
     weightNote = t('weight.uniform');
   }
 
-  const kv = computeKV({ config, tensors, batch, seq });
+  const kv = computeKV({ config, tensors, batch, seq, sequenceLengths });
   const vKV = kv.vKV;
   const kvNote = kv.note || '';
   const kvUnknown = !!kv.kvUnknown;

@@ -37,6 +37,8 @@ Voverhead = 2.0 + Vweights × 10%
 
 GLM 5.2 的已验证语义 payload 为 `B × S × 95,232 bytes`；Hy3 为 `B × S × 327,680 bytes`。DeepSeek V4 Pro 按 HCA/CSA 层组分别计算 local/compressed KV、indexer KV 和 FP32 compressor live state，完整逐项公式在界面审计明细与固定研究资产中展示。
 
+公开 `computeKV(...)` / `estimateVRAM(...)` 接口也接受 `sequenceLengths: number[]`。ragged batch 下 GLM 5.2 与 Hy3 使用 `Σ sequenceLengths`；DeepSeek V4 Pro 对每条序列独立跨越窗口与压缩边界后再逐 buffer 汇总。
+
 ### 本地开发
 
 ```bash
@@ -95,6 +97,8 @@ Voverhead = 2.0 + Vweights × 10%
 ```
 
 The verified semantic payload is `B × S × 95,232 bytes` for GLM 5.2 and `B × S × 327,680 bytes` for Hy3. DeepSeek V4 Pro separately accounts for HCA/CSA local and compressed KV, indexer KV, and FP32 compressor live state; the UI audit view and fixed research assets expose the complete per-buffer formulas.
+
+The public `computeKV(...)` / `estimateVRAM(...)` APIs also accept `sequenceLengths: number[]`. For ragged batches, GLM 5.2 and Hy3 use `Σ sequenceLengths`; DeepSeek V4 Pro evaluates window and compression boundaries independently for every sequence before summing each buffer.
 
 ### Local development
 

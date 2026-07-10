@@ -22,9 +22,9 @@ Label: wayfinder:map
 - [`01`](issues/01-investigate-glm-5-2-kv-layout.md): GLM 5.2 使用独立 IndexShare 布局；BF16 与官方 FP8 权重 checkpoint 是分别验签的显式 alias，KV 语义 dtype 均为 BF16。
 - [`02`](issues/02-investigate-deepseek-v4-pro-kv-layout.md): DeepSeek V4 Pro 使用一个完整 HCA/CSA 专用布局，包含 local/compressed KV、indexer KV 与 FP32 compressor live state。
 - [`03`](issues/03-investigate-hunyuan-3-kv-layout.md): 正式目标锁定 `tencent/Hy3`；主体为 80 层 full-context GQA，MTP 只作 checkpoint 身份验证并从核心 payload 排除。
-- [`04`](issues/04-prototype-profile-catalog-and-resolver-contract.md): `config.architectures` 仅选择人工目录候选，每个 Profile 再独立验证 config 与 tensor metadata；未知、冲突或漂移均 fail closed。
+- [`04`](issues/04-prototype-profile-catalog-and-resolver-contract.md): `config.architectures` 仅选择人工目录候选；单一类标识下所有候选分别验签，零个实际命中为 signature mismatch、多个实际命中为 conflict；不同已知类标识同时出现也直接报告 conflict。
 - [`05`](issues/05-prototype-dedicated-layout-and-breakdown-contract.md): 每个 Profile 只调用自己的完整布局；共享层仅负责 buffer 结果结构、安全整数、单位换算与总和验证。
-- [`06`](issues/06-prototype-profile-evidence-and-golden-test-gate.md): 固定 revision 证据、signature drift 测试、边界 golden vectors 与公开 API 端到端断言共同构成准入门槛。
+- [`06`](issues/06-prototype-profile-evidence-and-golden-test-gate.md): 固定 revision 证据、signature drift 测试、scalar/ragged 边界 golden vectors 与公开 API 端到端断言共同构成准入门槛。
 - [`07`](issues/07-prototype-auditable-vram-result-and-ui.md): 结果公开 Profile/layout 版本、逐 buffer 明细与证据；KV unknown 时完整总显存保持 unknown。
 - [`08`](issues/08-decide-cutover-to-verified-profile-calculation.md): 已移除生产启发式回退与旧 MHA/MLA/DSA 注册表，首批目录之外的模型不再估算 KV。
 

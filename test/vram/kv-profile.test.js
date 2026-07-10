@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { computeKV } from '../../src/vram/kv/index.js';
+import { computeKV, resolveProfileCandidate } from '../../src/vram/kv/index.js';
+import { makeBuffer } from '../../src/vram/kv/profile-result.js';
 import { deepseekV4ProFixture, glm52Fixture, hy3Fixture } from './profile-fixtures.js';
 
 test('unsupported Model Class Identifier fails closed without a heuristic estimate', () => {
@@ -49,7 +50,7 @@ test('missing Model Class Identifier fails closed instead of using config fallba
   assert.equal(result.status, 'unsupported');
   assert.equal(result.vKV, null);
   assert.deepEqual(result.diagnostic, {
-    code: 'missing_model_architecture',
+    code: 'missing_model_class_identifier',
     modelClassIdentifiers: [],
   });
 });
@@ -268,4 +269,78 @@ test('verified profiles reject unreviewed KV cache dtype overrides', () => {
       fixture.config.architectures[0],
     );
   }
+});
+
+test('candidate resolution validates every same-class Profile before reporting conflict', () => {
+  const rejected = {
+    id: 'rejected',
+    match: () => ({ matched: false, mismatches: ['config.variant'] }),
+  };
+  const accepted = {
+    id: 'accepted',
+    match: () => ({ matched: true, mismatches: [] }),
+  };
+
+  const selected = resolveProfileCandidate([rejected, accepted], { config: {}, tensors: [] });
+  assert.equal(selected.status, 'matched');
+  assert.equal(selected.profile, accepted);
+
+  const conflict = resolveProfileCandidate([accepted, { ...accepted, id: 'also-accepted' }], {
+    config: {}, tensors: [],
+  });
+  assert.equal(conflict.status, 'conflict');
+  assert.deepEqual(conflict.profileIds, ['accepted', 'also-accepted']);
+});
+
+test('different known Model Class Identifiers still report an explicit Profile conflict', () => {
+  const result = computeKV({
+    config: { architectures: ['GlmMoeDsaForCausalLM', 'HYV3ForCausalLM'] },
+    tensors: [],
+  });
+
+  assert.equal(result.status, 'conflict');
+  assert.equal(result.diagnostic.code, 'conflicting_architecture_profiles');
+  assert.deepEqual(result.diagnostic.details.profileIds, [
+    'glm-5.2-semantic-bf16-v1',
+    'hy3-instruct-semantic-bf16-v1',
+  ]);
+});
+
+test('linear full-context Profiles use the sum of ragged sequence lengths', () => {
+  const glm = computeKV({ ...glm52Fixture(), sequenceLengths: [1, 2048, 2049] });
+  const hy3 = computeKV({ ...hy3Fixture(), sequenceLengths: [1, 4096, 8192] });
+
+  assert.equal(glm.totalBytes, (1 + 2048 + 2049) * 95_232);
+  assert.equal(hy3.totalBytes, 4_026_859_520);
+});
+
+test('DeepSeek V4 Pro evaluates ragged compression boundaries per sequence', () => {
+  const fixture = deepseekV4ProFixture();
+  const lengths = [3, 4, 7, 128, 129];
+  const ragged = computeKV({ ...fixture, sequenceLengths: lengths });
+  const independentlySummed = lengths.reduce(
+    (sum, seq) => sum + computeKV({ ...fixture, batch: 1, seq }).totalBytes,
+    0,
+  );
+
+  assert.equal(ragged.status, 'verified');
+  assert.equal(ragged.totalBytes, independentlySummed);
+});
+
+test('DeepSeek V4 Pro rejects a zero-sized scalar batch', () => {
+  const result = computeKV({ ...deepseekV4ProFixture(), batch: 0, seq: 128 });
+
+  assert.equal(result.status, 'unsupported');
+  assert.equal(result.vKV, null);
+  assert.equal(result.diagnostic.code, 'profile_input_out_of_range');
+});
+
+test('shared buffer validation rejects a dtype and byte-width mismatch', () => {
+  assert.throws(
+    () => makeBuffer({
+      id: 'bad-bf16', label: 'bad', layerGroup: {}, elements: 1,
+      dtype: 'BF16', bytesPerElement: 1, formula: 'invalid',
+    }),
+    /Dtype width mismatch/,
+  );
 });

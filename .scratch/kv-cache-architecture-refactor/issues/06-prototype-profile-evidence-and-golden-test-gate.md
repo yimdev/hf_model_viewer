@@ -8,4 +8,4 @@ Blocked by: 04, 05
 
 ## Answer
 
-每个 Profile 内嵌固定 revision 证据，研究资产记录独立推导与边界向量；`test/vram/kv-profile.test.js` 通过公开 `computeKV(...)` 验证逐 buffer golden、窗口/压缩边界、最大 context、dtype/scale、额外层和签名漂移。任一 predicate 不符即自动回到 unknown。
+每个 Profile 内嵌固定 revision 证据，研究资产记录独立推导与边界向量；`test/vram/kv-profile.test.js` 通过公开 `computeKV(...)` 验证逐 buffer golden、scalar/ragged 窗口与压缩边界、最大 context、dtype/scale、额外层和签名漂移。任一 predicate 不符即自动回到 unknown。

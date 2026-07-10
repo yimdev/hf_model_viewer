@@ -8,4 +8,4 @@ Blocked by: 01, 02, 03
 
 ## Answer
 
-目录与 dispatcher 已实现于 `src/vram/kv/catalog.js`、`src/vram/kv/index.js`：精确模型类标识只选候选，候选 Profile 自己验证全部登记签名；0 个、多个或签名漂移都返回结构化 unknown/conflict，不存在通用回退。
+目录与 dispatcher 已实现于 `src/vram/kv/catalog.js`、`src/vram/kv/index.js`：精确模型类标识只选候选。单一类标识下所有候选 Profile 分别验证全部登记签名，零个实际命中返回 signature mismatch、多个实际命中返回 conflict；不同已知类标识同时出现也直接返回 conflict。不存在通用回退。

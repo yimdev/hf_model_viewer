@@ -1,4 +1,6 @@
-import { makeBuffer, verifiedResult } from '../profile-result.js';
+import {
+  makeBuffer, sameArray, tensorMatches, validateSequenceWorkload, verifiedResult,
+} from '../profile-result.js';
 
 const COMPRESS_RATIOS = [
   128, 128, 4, 128, 4, 128, 4, 128, 4, 128, 4, 128, 4, 128, 4, 128, 4, 128, 4, 128,
@@ -57,17 +59,6 @@ const REQUIRED_CONFIG = {
   compress_rope_theta: 160000,
   expert_dtype: 'fp4',
 };
-
-function sameArray(actual, expected) {
-  return Array.isArray(actual)
-    && actual.length === expected.length
-    && actual.every((value, index) => value === expected[index]);
-}
-
-function tensorMatches(byName, name, shape, dtype) {
-  const tensor = byName.get(name);
-  return tensor && tensor.dtype === dtype && sameArray(tensor.shape, shape);
-}
 
 function match({ config, tensors }) {
   const mismatches = [];
@@ -165,75 +156,79 @@ function layerGroup(label, indices) {
   return { label, count: indices.length, indices };
 }
 
-function compute({ batch, seq }) {
-  if (!Number.isInteger(batch) || batch < 0 || !Number.isInteger(seq) || seq < 0 || seq > 1048576) {
-    return { error: 'profile_input_out_of_range', details: { batch, seq, maxContext: 1048576 } };
-  }
-
-  const local = Math.min(seq, 128);
-  const compressed128 = Math.floor(seq / 128);
-  const remainder128 = seq % 128;
-  const compressed4 = Math.floor(seq / 4);
-  const active4 = seq < 4 ? seq : 4 + (seq % 4);
+function compute({ batch, seq, sequenceLengths }) {
+  const workload = validateSequenceWorkload({
+    batch, seq, sequenceLengths, maxContext: 1048576,
+  });
+  if (workload.error) return workload;
+  const sum = (calculate) => workload.entries.reduce(
+    (total, { length, count }) => total + count * calculate(length),
+    0,
+  );
+  const localAndCompressed128 = sum((length) => Math.min(length, 128) + Math.floor(length / 128));
+  const remainder128 = sum((length) => length % 128);
+  const localAndCompressed4 = sum((length) => Math.min(length, 128) + Math.floor(length / 4));
+  const compressed4 = sum((length) => Math.floor(length / 4));
+  const active4 = sum((length) => (length < 4 ? length : 4 + (length % 4)));
   const hca = layerGroup('HCA layers (compression ratio 128)', HCA_LAYERS);
   const csa = layerGroup('CSA layers (compression ratio 4)', CSA_LAYERS);
   const buffers = [
     makeBuffer({
       id: 'hca-kv', label: 'HCA local and compressed KV', layerGroup: hca,
-      elements: batch * 31 * 512 * (local + compressed128),
+      elements: 31 * 512 * localAndCompressed128,
       dtype: 'BF16', bytesPerElement: 2,
-      formula: 'B × 31 × 512 × (min(S,128) + floor(S/128))',
+      formula: 'Σᵢ 31 × 512 × (min(Sᵢ,128) + floor(Sᵢ/128))',
       evidenceIds: ['deepseek-v4-pro-config', 'deepseek-v4-pro-reference'],
     }),
     makeBuffer({
       id: 'hca-kv-state', label: 'HCA compressor KV state', layerGroup: hca,
-      elements: batch * 31 * 512 * remainder128,
+      elements: 31 * 512 * remainder128,
       dtype: 'F32', bytesPerElement: 4,
-      formula: 'B × 31 × 512 × (S mod 128)', evidenceIds: ['deepseek-v4-pro-reference'],
+      formula: 'Σᵢ 31 × 512 × (Sᵢ mod 128)', evidenceIds: ['deepseek-v4-pro-reference'],
     }),
     makeBuffer({
       id: 'hca-score-state', label: 'HCA compressor score state', layerGroup: hca,
-      elements: batch * 31 * 512 * remainder128,
+      elements: 31 * 512 * remainder128,
       dtype: 'F32', bytesPerElement: 4,
-      formula: 'B × 31 × 512 × (S mod 128)', evidenceIds: ['deepseek-v4-pro-reference'],
+      formula: 'Σᵢ 31 × 512 × (Sᵢ mod 128)', evidenceIds: ['deepseek-v4-pro-reference'],
     }),
     makeBuffer({
       id: 'csa-kv', label: 'CSA local and compressed KV', layerGroup: csa,
-      elements: batch * 30 * 512 * (local + compressed4),
+      elements: 30 * 512 * localAndCompressed4,
       dtype: 'BF16', bytesPerElement: 2,
-      formula: 'B × 30 × 512 × (min(S,128) + floor(S/4))',
+      formula: 'Σᵢ 30 × 512 × (min(Sᵢ,128) + floor(Sᵢ/4))',
       evidenceIds: ['deepseek-v4-pro-config', 'deepseek-v4-pro-reference'],
     }),
     makeBuffer({
       id: 'csa-indexer-kv', label: 'CSA compressed indexer KV', layerGroup: csa,
-      elements: batch * 30 * 128 * compressed4,
+      elements: 30 * 128 * compressed4,
       dtype: 'BF16', bytesPerElement: 2,
-      formula: 'B × 30 × 128 × floor(S/4)',
+      formula: 'Σᵢ 30 × 128 × floor(Sᵢ/4)',
       evidenceIds: ['deepseek-v4-pro-config', 'deepseek-v4-pro-reference'],
     }),
     makeBuffer({
       id: 'csa-kv-state', label: 'CSA compressor KV state', layerGroup: csa,
-      elements: batch * 30 * 1024 * active4,
+      elements: 30 * 1024 * active4,
       dtype: 'F32', bytesPerElement: 4,
-      formula: 'B × 30 × 1024 × A4(S)', evidenceIds: ['deepseek-v4-pro-reference'],
+      formula: 'Σᵢ 30 × 1024 × A4(Sᵢ)', evidenceIds: ['deepseek-v4-pro-reference'],
     }),
     makeBuffer({
       id: 'csa-score-state', label: 'CSA compressor score state', layerGroup: csa,
-      elements: batch * 30 * 1024 * active4,
+      elements: 30 * 1024 * active4,
       dtype: 'F32', bytesPerElement: 4,
-      formula: 'B × 30 × 1024 × A4(S)', evidenceIds: ['deepseek-v4-pro-reference'],
+      formula: 'Σᵢ 30 × 1024 × A4(Sᵢ)', evidenceIds: ['deepseek-v4-pro-reference'],
     }),
     makeBuffer({
       id: 'csa-indexer-kv-state', label: 'CSA indexer compressor KV state', layerGroup: csa,
-      elements: batch * 30 * 256 * active4,
+      elements: 30 * 256 * active4,
       dtype: 'F32', bytesPerElement: 4,
-      formula: 'B × 30 × 256 × A4(S)', evidenceIds: ['deepseek-v4-pro-reference'],
+      formula: 'Σᵢ 30 × 256 × A4(Sᵢ)', evidenceIds: ['deepseek-v4-pro-reference'],
     }),
     makeBuffer({
       id: 'csa-indexer-score-state', label: 'CSA indexer compressor score state', layerGroup: csa,
-      elements: batch * 30 * 256 * active4,
+      elements: 30 * 256 * active4,
       dtype: 'F32', bytesPerElement: 4,
-      formula: 'B × 30 × 256 × A4(S)', evidenceIds: ['deepseek-v4-pro-reference'],
+      formula: 'Σᵢ 30 × 256 × A4(Sᵢ)', evidenceIds: ['deepseek-v4-pro-reference'],
     }),
   ];
 

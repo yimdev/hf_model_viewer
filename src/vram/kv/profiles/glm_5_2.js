@@ -1,4 +1,6 @@
-import { makeBuffer, verifiedResult } from '../profile-result.js';
+import {
+  makeBuffer, sameArray, tensorMatches, validateSequenceWorkload, verifiedResult,
+} from '../profile-result.js';
 
 const FULL_INDEXER_LAYERS = [
   0, 1, 2, 6, 10, 14, 18, 22, 26, 30, 34, 38, 42, 46, 50, 54, 58, 62, 66, 70, 74,
@@ -65,19 +67,6 @@ const REQUIRED_CONFIG = {
   max_position_embeddings: 1048576,
   num_nextn_predict_layers: 1,
 };
-
-function sameArray(actual, expected) {
-  return Array.isArray(actual)
-    && actual.length === expected.length
-    && actual.every((value, index) => value === expected[index]);
-}
-
-function tensorMatches(byName, name, shape, dtype) {
-  const tensor = byName.get(name);
-  return tensor
-    && sameArray(tensor.shape, shape)
-    && tensor.dtype === dtype;
-}
 
 function match({ config, tensors }) {
   const mismatches = [];
@@ -167,12 +156,13 @@ function match({ config, tensors }) {
   return { matched: mismatches.length === 0, mismatches };
 }
 
-function compute({ batch, seq }) {
-  if (!Number.isInteger(batch) || batch < 0 || !Number.isInteger(seq) || seq < 0 || seq > 1048576) {
-    return { error: 'profile_input_out_of_range', details: { batch, seq, maxContext: 1048576 } };
-  }
-
-  const tokenCount = batch * seq;
+function compute({ batch, seq, sequenceLengths }) {
+  const workload = validateSequenceWorkload({
+    batch, seq, sequenceLengths, maxContext: 1048576,
+  });
+  if (workload.error) return workload;
+  const tokenCount = workload.tokenCount;
+  const tokenFormula = 'T = B × S or Σ sequence_lengths';
   const buffers = [
     makeBuffer({
       id: 'mla-latent',
@@ -181,7 +171,7 @@ function compute({ batch, seq }) {
       elements: tokenCount * 78 * 512,
       dtype: 'BF16',
       bytesPerElement: 2,
-      formula: 'B × S × 78 × 512',
+      formula: `T × 78 × 512; ${tokenFormula}`,
       evidenceIds: ['glm52-config', 'glm52-transformers'],
     }),
     makeBuffer({
@@ -191,7 +181,7 @@ function compute({ batch, seq }) {
       elements: tokenCount * 78 * 64,
       dtype: 'BF16',
       bytesPerElement: 2,
-      formula: 'B × S × 78 × 64',
+      formula: `T × 78 × 64; ${tokenFormula}`,
       evidenceIds: ['glm52-config', 'glm52-transformers'],
     }),
     makeBuffer({
@@ -201,7 +191,7 @@ function compute({ batch, seq }) {
       elements: tokenCount * 21 * 128,
       dtype: 'BF16',
       bytesPerElement: 2,
-      formula: 'B × S × 21 × 128',
+      formula: `T × 21 × 128; ${tokenFormula}`,
       evidenceIds: ['glm52-config', 'glm52-transformers'],
     }),
   ];
