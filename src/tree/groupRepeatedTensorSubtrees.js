@@ -26,30 +26,38 @@ function createSignatureReader() {
   return signatureFor;
 }
 
-function groupMembers(members, signatureFor) {
-  const representative = members[0];
-  const childBuckets = new Map();
-
-  for (const member of members) {
-    for (const child of member.children) {
-      const signature = signatureFor(child);
-      if (!childBuckets.has(signature)) childBuckets.set(signature, []);
-      childBuckets.get(signature).push(child);
-    }
+function bucketChildren(children, signatureFor) {
+  const buckets = new Map();
+  for (const child of children) {
+    const signature = signatureFor(child);
+    if (!buckets.has(signature)) buckets.set(signature, []);
+    buckets.get(signature).push(child);
   }
+  return buckets;
+}
 
-  const children = [...childBuckets.values()].map((childrenWithSameStructure) => (
-    groupMembers(childrenWithSameStructure, signatureFor)
-  ));
+function groupMembers(members, signatureFor, repeatCount = 1, repeatIds = []) {
+  const representative = members[0];
+  const localBuckets = bucketChildren(representative.children, signatureFor);
+  const children = [...localBuckets.entries()].map(([signature, localMembers]) => {
+    const allMembers = members.flatMap((member) => (
+      member.children.filter((child) => signatureFor(child) === signature)
+    ));
+    const localIds = localMembers.every((child) => child.numeric)
+      ? localMembers.map((child) => child.segment)
+      : [];
+    return groupMembers(allMembers, signatureFor, localMembers.length, localIds);
+  });
 
   return {
     segment: representative.segment,
     prefix: representative.prefix,
     numeric: representative.numeric,
-    directChildCount: children.length,
+    directChildCount: representative.directChildCount,
     children,
     tensors: members.flatMap((member) => member.tensors),
-    repeatCount: members.length,
+    repeatCount,
+    repeatIds,
     members,
   };
 }

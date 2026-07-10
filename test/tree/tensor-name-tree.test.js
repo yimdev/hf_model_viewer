@@ -103,8 +103,9 @@ test('builds Repeated Tensor Groups from matching Numeric Path Branches', () => 
   const grouped = groupRepeatedTensorSubtrees(buildTensorNameTree(tensors));
   const layers = descendant(grouped, 'model', 'layers');
 
-  assert.equal(layers.directChildCount, 3);
+  assert.equal(layers.directChildCount, 4);
   assert.equal(layers.children[0].repeatCount, 2);
+  assert.deepEqual(layers.children[0].repeatIds, ['0', '1']);
   assert.deepEqual(layers.children[0].members.map((node) => node.prefix), [
     'model.layers.0',
     'model.layers.1',
@@ -114,9 +115,39 @@ test('builds Repeated Tensor Groups from matching Numeric Path Branches', () => 
   const repeatedAttention = descendant(layers.children[0], 'self_attn');
   const repeatedWeight = descendant(repeatedAttention, 'q', 'weight');
   assert.equal(repeatedAttention.directChildCount, 2);
-  assert.equal(repeatedWeight.repeatCount, 2);
+  assert.equal(repeatedWeight.repeatCount, 1);
   assert.deepEqual(repeatedWeight.tensors.map((tensor) => tensor.name), [
     'model.layers.0.self_attn.q.weight',
     'model.layers.1.self_attn.q.weight',
   ]);
+});
+
+test('reports nested Repeated Tensor Groups within local Numeric Path Branches', () => {
+  const tensors = [];
+  for (let outerIndex = 0; outerIndex < 2; outerIndex += 1) {
+    for (let innerIndex = 0; innerIndex < 3; innerIndex += 1) {
+      tensors.push({
+        name: `model.layers.${outerIndex}.mlp.experts.${innerIndex}.down.weight`,
+        shape: [8, 8],
+        dtype: 'BF16',
+      });
+    }
+  }
+
+  const grouped = groupRepeatedTensorSubtrees(buildTensorNameTree(tensors));
+  const outerBranches = descendant(grouped, 'model', 'layers');
+  const repeatedOuterBranch = outerBranches.children[0];
+  const innerBranches = descendant(repeatedOuterBranch, 'mlp', 'experts');
+  const repeatedInnerBranch = innerBranches.children[0];
+  const nestedWeight = descendant(repeatedInnerBranch, 'down', 'weight');
+
+  assert.equal(outerBranches.directChildCount, 2);
+  assert.equal(repeatedOuterBranch.repeatCount, 2);
+  assert.deepEqual(repeatedOuterBranch.repeatIds, ['0', '1']);
+  assert.equal(innerBranches.directChildCount, 3);
+  assert.equal(repeatedInnerBranch.repeatCount, 3);
+  assert.deepEqual(repeatedInnerBranch.repeatIds, ['0', '1', '2']);
+  assert.equal(repeatedInnerBranch.members.length, 6);
+  assert.equal(nestedWeight.repeatCount, 1);
+  assert.equal(nestedWeight.tensors.length, 6);
 });

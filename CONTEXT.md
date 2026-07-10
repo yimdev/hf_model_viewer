@@ -53,5 +53,5 @@ A Tensor Name Tree branch whose accumulated path contains a standalone non-negat
 _Avoid_: Layer ID, Expert ID, architecture inference
 
 **Repeated Tensor Group**:
-A bottom-up display group of numeric sibling subtrees whose normalized relative keys, terminal Shapes, and terminal DTypes are identical; one representative is displayed with its actual copy count, while parameters and bytes include every original tensor. The public `groupRepeatedTensorSubtrees` operation creates these groups.
+A bottom-up display group of numeric sibling subtrees whose normalized relative keys, terminal Shapes, and terminal DTypes are identical; one representative is displayed with its repeat count and IDs relative to the current parent, while parameters and bytes include every original tensor across ancestor repetitions. The public `groupRepeatedTensorSubtrees` operation creates these groups.
 _Avoid_: Architecture-based grouping, representative-only VRAM, shape-only grouping

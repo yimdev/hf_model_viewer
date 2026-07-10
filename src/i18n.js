@@ -115,11 +115,11 @@ const STR = {
   'tree.col.params': { zh: '参数量', en: 'Params' },
   'tree.col.vram': { zh: '显存', en: 'VRAM' },
   'tree.prefixHint': {
-    zh: '按名称从左到右展开；相对 key 结构、Shape 与 DType 相同的重复结构从叶子向上聚合，并标记实际份数。',
-    en: 'Expand names from left to right; repeated structures with matching relative keys, Shapes, and DTypes are grouped from leaves upward and show their actual copy count.',
+    zh: '每次展开一级；括号为实际子节点数，重复徽标为当前父级内的相同份数，悬停可查看具体 ID。',
+    en: 'Expand one level at a time; parentheses show actual child counts, while repeat badges show matches within the current parent and reveal their IDs on hover.',
   },
   'tree.paramsUnit': { zh: '参数', en: 'params' },
-  'tree.repeatCopies': { zh: '{count} 份实际副本', en: '{count} actual copies' },
+  'tree.repeatIds': { zh: '{count} 份局部重复；IDs: {ids}', en: '{count} local matches; IDs: {ids}' },
 
   // Chart
   'chart.vramLabel': { zh: '显存占用 (GB)', en: 'VRAM usage (GB)' },

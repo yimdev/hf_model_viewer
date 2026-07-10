@@ -2,9 +2,9 @@
  * ------------------------------------------------------------
  * Branches show cumulative dot-delimited prefixes. Single-child chains are
  * compressed into one visible row, while true branches remain independently
- * collapsible. A Numeric Path Branch starts closed;
- * named branches start open. Bottom-up equivalent subtrees share one visible
- * Repeated Tensor Group while statistics retain every original tensor.
+ * collapsible. Every branch starts closed so one interaction reveals one
+ * additional level. Bottom-up equivalent subtrees share one visible Repeated
+ * Tensor Group while statistics retain every original tensor.
  * ------------------------------------------------------------ */
 
 import { fmtNum, fmtBytesGB, esc } from './format.js';
@@ -46,16 +46,19 @@ function pathLabel(prefix) {
 function collapseSingleChild(node) {
   let current = node;
   let containsNumeric = node.numeric;
+  let repetitionNode = node.repeatCount > 1 ? node : null;
 
   while (current.tensors.length === 0 && current.children.length === 1) {
     const next = current.children[0];
     const nextContainsNumeric = containsNumeric || next.numeric;
     if (nextContainsNumeric && next.children.length === 0) break;
+    if (repetitionNode && next.repeatCount > 1) break;
     current = next;
     containsNumeric ||= current.numeric;
+    if (current.repeatCount > 1) repetitionNode = current;
   }
 
-  return { node: current, containsNumeric };
+  return { node: current, containsNumeric, repetitionNode };
 }
 
 function collectSubtreeStats(node, effectiveBppByTensorName, onNode) {
@@ -83,8 +86,9 @@ function createStats(tree, effectiveBppByTensorName) {
 }
 
 function repeatBadge(node) {
+  const ids = node.repeatIds.join(', ');
   return node.repeatCount > 1
-    ? `<span class="tensor-repeat" title="${esc(t('tree.repeatCopies', { count: node.repeatCount }))}">×${fmtNum(node.repeatCount)}</span>`
+    ? `<span class="tensor-repeat" title="${esc(t('tree.repeatIds', { count: node.repeatCount, ids }))}">×${fmtNum(node.repeatCount)}</span>`
     : '';
 }
 
@@ -111,8 +115,8 @@ function renderVisibleNode(start, effectiveBppByTensorName, statsFor, depth) {
 
   const stats = statsFor(node);
   const directEntries = node.directChildCount;
-  const open = collapsed.containsNumeric ? '' : ' open';
   const numericClass = collapsed.containsNumeric ? ' numeric-branch' : '';
+  const repetitionNode = collapsed.repetitionNode || node;
   const terminalRows = node.tensors.length > 0
     ? tensorLeaf(node, effectiveBppByTensorName, depth + 1)
     : '';
@@ -121,11 +125,11 @@ function renderVisibleNode(start, effectiveBppByTensorName, statsFor, depth) {
     .join('');
 
   return `
-    <details class="tensor-branch${numericClass}"${open}>
+    <details class="tensor-branch${numericClass}">
       <summary style="--tree-depth:${depth}">
         <span class="tensor-path">${pathLabel(node.prefix)}</span>
         <span class="tensor-child-count">(${directEntries})</span>
-        ${repeatBadge(node)}
+        ${repeatBadge(repetitionNode)}
         <span class="tensor-chevron" aria-hidden="true"></span>
         <span class="tensor-branch-meta">${fmtNum(stats.params)} ${esc(t('tree.paramsUnit'))} · <span class="byte-cell" data-key="p:${esc(node.prefix)}">${fmtBytesGB(stats.bytes)}</span></span>
       </summary>
@@ -156,6 +160,15 @@ export function renderTree(container, tree, effectiveBppByTensorName) {
       <span>${esc(t('tree.col.vram'))}</span>
     </div>
     <div class="tensor-name-tree">${rows}</div>`;
+
+  container.querySelectorAll('details.tensor-branch').forEach((branch) => {
+    branch.addEventListener('toggle', () => {
+      if (branch.open) return;
+      branch.querySelectorAll('details.tensor-branch[open]').forEach((descendant) => {
+        descendant.open = false;
+      });
+    });
+  });
 }
 
 /** Refresh byte totals without rebuilding the DOM, preserving open branches. */
