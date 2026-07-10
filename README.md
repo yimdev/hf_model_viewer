@@ -7,12 +7,12 @@
 ### Features
 
 - **Zero-download parsing** — reads only the `safetensors` header JSON via HTTP Range requests, never downloading weight data; parses huge MoE repos in seconds.
-- **Dynamic VRAM estimation** — computes per-tensor weight VRAM from parsed shapes and dtypes, then adds the verified KV Cache payload.
+- **Dynamic VRAM estimation** — computes per-tensor weight VRAM from parsed shapes and dtypes, then adds the Effective KV Cache Payload.
 - **Verified KV Cache Profiles** — exact model-class identifiers select manually reviewed candidates, which must validate their complete config and safetensors metadata signatures. Unknown models fail closed; no generic formula is guessed.
 - **Initial dedicated layouts** — GLM 5.2 IndexShare, DeepSeek V4 Pro HCA/CSA (including indexer and compressor state), and Hy3 full-context GQA. Each Profile owns one complete layout.
 - **Auditable breakdown** — exposes Profile/layout versions and every buffer group's layers, element count, dtype, bytes, formula, and fixed-revision evidence.
 - **Per-module quantization strategy** — `uniform` (quantize all) / `keep-fp16` (Linear only) / `native` (use on-disk dtype). Respects pre-quantized weights — already FP4 stays FP4.
-- **Fine-grained composition** — overview breaks VRAM down by Tensor Name Pattern plus KV. The shared expert (always active, exactly 1 per layer) is clearly separated from the routed experts (×N, only a few active per token).
+- **Fine-grained composition** — overview breaks VRAM down by Tensor Name Pattern plus the Effective KV Cache Payload. The shared expert (always active, exactly 1 per layer) is clearly separated from the routed experts (×N, only a few active per token).
 - **Dual-form delivery** — one source tree builds both a GitHub Pages static site and a browser extension.
 - **Bilingual UI** — web and extension both offer one-click Chinese / English switching, persisted locally.
 
