@@ -3,7 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "description": "LLM 架构与显存计算器 — 纯前端双形态分发（GitHub Pages + 浏览器扩展）",
+  "description": "Zero-download LLM architecture and VRAM estimator for GitHub Pages and browser extensions",
   "scripts": {
     "dev": "BUILD_TARGET=web vite",
     "test": "node --no-warnings --test test/vram/*.test.js",
