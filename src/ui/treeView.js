@@ -1,12 +1,9 @@
-/* ui/treeView.js — Full structure tree (collapsible <details> + <table> ops)
+/* ui/treeView.js — Left-to-right Tensor Name Tree
  * ------------------------------------------------------------
- * The VRAM column is rendered from the "per-tensor effective bytes" map,
- * matching the calculator:
- *   - each tensor cell carries data-key="t:<name>"
- *   - aggregate cells (layer / block / expert / MoE) carry their own data-key
- * On precision / quantization change we only call updateTreeBytes to refresh
- * the text (not rebuild the DOM), preserving the user's expanded state.
- * data-keys line up 1:1 with buildByteMap.
+ * Branches show cumulative dot-delimited prefixes. Single-child chains are
+ * compressed into one visible row, while true branches remain independently
+ * collapsible. A Numeric Path Branch starts closed;
+ * named branches start open. Leaves retain the original tensor metadata.
  * ------------------------------------------------------------ */
 
 import { fmtNum, fmtBytesGB, esc } from './format.js';
@@ -16,153 +13,148 @@ import { t } from '../i18n.js';
 function pCount(tensor) {
   return tensor.params != null ? tensor.params : tensorParams(tensor.shape);
 }
-function effBpp(name, map) {
-  return map.get(name) ?? 2;
-}
-function tensorByte(tensor, map) {
-  return pCount(tensor) * effBpp(tensor.name, map);
+
+function effBpp(name, effectiveBppByTensorName) {
+  return effectiveBppByTensorName.get(name) ?? 2;
 }
 
-/** Recompute all aggregate VRAM from the tree + effective-byte map
- *  (same rules as at render time). */
-function buildByteMap(tree, map) {
-  const m = new Map();
-  const sumTensors = (list = []) => list.reduce((sum, tensor) => {
-    const bytes = tensorByte(tensor, map);
-    m.set('t:' + tensor.name, bytes);
-    return sum + bytes;
-  }, 0);
-  for (const grp of tree.nonLayer) {
-    m.set('n:' + grp.group, sumTensors(grp.tensors));
+function tensorByte(tensor, effectiveBppByTensorName) {
+  return pCount(tensor) * effBpp(tensor.name, effectiveBppByTensorName);
+}
+
+function pathLabel(prefix) {
+  const split = prefix.lastIndexOf('.');
+  const parent = split < 0 ? '' : prefix.slice(0, split + 1);
+  const current = split < 0 ? prefix : prefix.slice(split + 1);
+  return `<span class="tensor-path-parent">${esc(parent)}</span><span class="tensor-path-current">${esc(current)}</span>`;
+}
+
+function collapseSingleChild(node) {
+  let current = node;
+  let containsNumeric = node.numeric;
+
+  while (current.tensors.length === 0 && current.children.length === 1) {
+    const next = current.children[0];
+    const nextContainsNumeric = containsNumeric || next.numeric;
+    if (nextContainsNumeric && next.children.length === 0) break;
+    current = next;
+    containsNumeric ||= current.numeric;
   }
-  tree.layers.forEach((layer, i) => {
-    if (!layer) return;
-    let layerBytes = 0;
-    const acc = (list, key) => {
-      const bytes = sumTensors(list);
-      layerBytes += bytes;
-      m.set(key, bytes);
-    };
-    acc(layer.attn, `l:${i}:attn`);
-    acc(layer.mlp, `l:${i}:mlp`);
-    acc(layer.norm, `l:${i}:norm`);
-    acc(layer.other, `l:${i}:other`);
-    if (layer.experts) {
-      const rep = layer.experts.representative || [];
-      const eb = sumTensors(rep) * layer.experts.count;
-      layerBytes += eb;
-      m.set('e:' + i, eb);
-    }
-    if (layer.sharedExperts) {
-      const sb = sumTensors(layer.sharedExperts.tensors);
-      layerBytes += sb;
-      m.set('se:' + i, sb);
-    }
-    m.set('l:' + i, layerBytes);
-  });
-  return m;
+
+  return { node: current, containsNumeric };
 }
 
-function tensorTable(tensors, map) {
-  const rows = tensors
-    .map(
-      (tn) => `
-      <tr>
-        <td><code>${esc(tn.name)}</code></td>
-        <td>${esc(tn.shape.join('×'))}</td>
-        <td>${esc(tn.dtype)}</td>
-        <td class="num">${fmtNum(pCount(tn))}</td>
-        <td class="num byte-cell" data-key="t:${esc(tn.name)}">${fmtBytesGB(tensorByte(tn, map))}</td>
-      </tr>`,
-    )
+function collectSubtreeStats(node, effectiveBppByTensorName, visitor) {
+  let params = 0;
+  let bytes = 0;
+  let tensors = 0;
+
+  for (const tensor of node.tensors) {
+    const tensorBytes = tensorByte(tensor, effectiveBppByTensorName);
+    params += pCount(tensor);
+    bytes += tensorBytes;
+    tensors += 1;
+    visitor.tensor(tensor, tensorBytes);
+  }
+  for (const child of node.children) {
+    const childStats = collectSubtreeStats(child, effectiveBppByTensorName, visitor);
+    params += childStats.params;
+    bytes += childStats.bytes;
+    tensors += childStats.tensors;
+  }
+
+  const stats = { params, bytes, tensors };
+  visitor.node(node, stats);
+  return stats;
+}
+
+function createStats(tree, effectiveBppByTensorName) {
+  const cache = new WeakMap();
+  collectSubtreeStats(tree, effectiveBppByTensorName, {
+    tensor() {},
+    node(node, stats) {
+      cache.set(node, stats);
+    },
+  });
+
+  return (node) => cache.get(node);
+}
+
+function tensorLeaf(tensor, effectiveBppByTensorName, depth) {
+  return `
+    <div class="tensor-leaf" style="--tree-depth:${depth}">
+      <div class="tensor-path">${pathLabel(tensor.name)}</div>
+      <code class="tensor-shape">${esc(tensor.shape.join('×'))}</code>
+      <code class="tensor-dtype">${esc(tensor.dtype)}</code>
+      <span class="tensor-number">${fmtNum(pCount(tensor))}</span>
+      <span class="tensor-number byte-cell" data-key="t:${esc(tensor.name)}">${fmtBytesGB(tensorByte(tensor, effectiveBppByTensorName))}</span>
+    </div>`;
+}
+
+function renderVisibleNode(start, effectiveBppByTensorName, statsFor, depth) {
+  const collapsed = collapseSingleChild(start);
+  const node = collapsed.node;
+
+  if (node.children.length === 0) {
+    return node.tensors.map((tensor) => tensorLeaf(tensor, effectiveBppByTensorName, depth)).join('');
+  }
+
+  const stats = statsFor(node);
+  const directEntries = node.directChildCount;
+  const open = collapsed.containsNumeric ? '' : ' open';
+  const numericClass = collapsed.containsNumeric ? ' numeric-branch' : '';
+  const terminalRows = node.tensors.map((tensor) => tensorLeaf(tensor, effectiveBppByTensorName, depth + 1)).join('');
+  const childRows = node.children
+    .map((child) => renderVisibleNode(child, effectiveBppByTensorName, statsFor, depth + 1))
     .join('');
-  return `<table class="ops"><thead><tr><th>${esc(t('tree.col.op'))}</th><th>${esc(t('tree.col.shape'))}</th><th>${esc(t('tree.col.dtype'))}</th><th class="num">${esc(t('tree.col.params'))}</th><th class="num">${esc(t('tree.col.vram'))}</th></tr></thead><tbody>${rows}</tbody></table>`;
-}
 
-function blockHTML(title, tensors, map, key) {
-  if (!tensors || !tensors.length) return '';
-  const total = tensors.reduce((a, tn) => a + pCount(tn), 0);
-  const bytes = tensors.reduce((a, tn) => a + tensorByte(tn, map), 0);
-  return `<details class="block"><summary>${esc(title)} <span class="meta">${fmtNum(total)} ${t('tree.paramsUnit')} · <span class="byte-cell" data-key="${key}">${fmtBytesGB(bytes)}</span></span></summary>${tensorTable(tensors, map)}</details>`;
-}
-
-function expertsHTML(layer, map, i) {
-  const e = layer.experts;
-  const rep = e.representative || [];
-  const repTotal = rep.reduce((a, tn) => a + pCount(tn), 0);
-  const totalBytes = rep.reduce((a, tn) => a + tensorByte(tn, map), 0) * e.count;
   return `
-    <details class="block">
-      <summary>${esc(t('tree.moeExperts'))} <span class="tag moe">×${e.count}</span>
-        <span class="meta">${fmtNum(repTotal * e.count)} ${t('tree.paramsUnit')} · <span class="byte-cell" data-key="e:${i}">${fmtBytesGB(totalBytes)}</span></span>
+    <details class="tensor-branch${numericClass}"${open}>
+      <summary style="--tree-depth:${depth}">
+        <span class="tensor-path">${pathLabel(node.prefix)}</span>
+        <span class="tensor-child-count">(${directEntries})</span>
+        <span class="tensor-chevron" aria-hidden="true"></span>
+        <span class="tensor-branch-meta">${fmtNum(stats.params)} ${esc(t('tree.paramsUnit'))} · <span class="byte-cell" data-key="p:${esc(node.prefix)}">${fmtBytesGB(stats.bytes)}</span></span>
       </summary>
-      <p class="note">${esc(t('tree.expertNote', { n: e.count }))}</p>
-      ${tensorTable(rep, map)}
+      ${terminalRows}${childRows}
     </details>`;
 }
 
-function sharedExpertsHTML(layer, map, i) {
-  const se = layer.sharedExperts;
-  if (!se) return '';
-  const total = se.params;
-  const bytes = se.tensors.reduce((a, tn) => a + tensorByte(tn, map), 0);
-  return `
-    <details class="block">
-      <summary>${esc(t('tree.sharedExpert'))} <span class="tag shared">1</span>
-        <span class="meta">${fmtNum(total)} ${t('tree.paramsUnit')} · <span class="byte-cell" data-key="se:${i}">${fmtBytesGB(bytes)}</span></span>
-      </summary>
-      <p class="note">${esc(t('tree.sharedExpertNote'))}</p>
-      ${tensorTable(se.tensors, map)}
-    </details>`;
-}
-
-function layerHTML(i, layer, map) {
-  let layerBytes = 0;
-  const acc = (list) => {
-    layerBytes += (list || []).reduce((s, tn) => s + tensorByte(tn, map), 0);
-  };
-  acc(layer.attn);
-  acc(layer.mlp);
-  acc(layer.norm);
-  acc(layer.other);
-  if (layer.experts) {
-    const rep = layer.experts.representative || [];
-    layerBytes += rep.reduce((s, tn) => s + tensorByte(tn, map), 0) * layer.experts.count;
-  }
-  if (layer.sharedExperts) {
-    layerBytes += layer.sharedExperts.tensors.reduce((s, tn) => s + tensorByte(tn, map), 0);
-  }
-  const meta = `<span class="meta"><b>${fmtNum(layer.layerParams)}</b> ${t('tree.paramsUnit')} · <span class="byte-cell" data-key="l:${i}">${fmtBytesGB(layerBytes)}</span></span>`;
-  const inner =
-    blockHTML('Self-Attention', layer.attn, map, `l:${i}:attn`) +
-    (layer.experts ? expertsHTML(layer, map, i) : '') +
-    (layer.sharedExperts ? sharedExpertsHTML(layer, map, i) : '') +
-    blockHTML(t('tree.mlpDense'), layer.mlp, map, `l:${i}:mlp`) +
-    blockHTML('Norm', layer.norm, map, `l:${i}:norm`) +
-    blockHTML('Other', layer.other, map, `l:${i}:other`);
-  return `<details class="layer"><summary>Layer ${i} ${meta}</summary>${inner}</details>`;
-}
-
-export function renderTree(container, tree, map) {
-  const parts = [];
-  for (const grp of tree.nonLayer) {
-    const title =
-      grp.group === 'Embedding' ? 'Embedding' : grp.group === 'LM Head' ? 'LM Head' : grp.group;
-    parts.push(blockHTML(title, grp.tensors, map, 'n:' + grp.group));
-  }
-  tree.layers.forEach((layer, i) => {
-    if (!layer) return;
-    parts.push(layerHTML(i, layer, map));
+function buildByteMap(tree, effectiveBppByTensorName) {
+  const bytes = new Map();
+  collectSubtreeStats(tree, effectiveBppByTensorName, {
+    tensor(tensor, tensorBytes) {
+      bytes.set(`t:${tensor.name}`, tensorBytes);
+    },
+    node(node, stats) {
+      bytes.set(`p:${node.prefix}`, stats.bytes);
+    },
   });
-  container.innerHTML = parts.join('');
+  return bytes;
 }
 
-/** On precision / quantization change, only refresh the VRAM text
- *  (using the latest effective-byte map). */
-export function updateTreeBytes(container, tree, map) {
-  const bm = buildByteMap(tree, map);
-  container.querySelectorAll('.byte-cell').forEach((el) => {
-    const k = el.getAttribute('data-key');
-    if (bm.has(k)) el.textContent = fmtBytesGB(bm.get(k));
+export function renderTree(container, tree, effectiveBppByTensorName) {
+  const statsFor = createStats(tree, effectiveBppByTensorName);
+  const rows = tree.children
+    .map((child) => renderVisibleNode(child, effectiveBppByTensorName, statsFor, 0))
+    .join('');
+  container.innerHTML = `
+    <p class="tensor-tree-hint">${esc(t('tree.prefixHint'))}</p>
+    <div class="tensor-tree-header">
+      <span>${esc(t('tree.col.op'))}</span>
+      <span>${esc(t('tree.col.shape'))}</span>
+      <span>${esc(t('tree.col.dtype'))}</span>
+      <span>${esc(t('tree.col.params'))}</span>
+      <span>${esc(t('tree.col.vram'))}</span>
+    </div>
+    <div class="tensor-name-tree">${rows}</div>`;
+}
+
+/** Refresh byte totals without rebuilding the DOM, preserving open branches. */
+export function updateTreeBytes(container, tree, effectiveBppByTensorName) {
+  const byteMap = buildByteMap(tree, effectiveBppByTensorName);
+  container.querySelectorAll('.byte-cell').forEach((element) => {
+    const key = element.getAttribute('data-key');
+    if (byteMap.has(key)) element.textContent = fmtBytesGB(byteMap.get(key));
   });
 }

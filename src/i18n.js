@@ -52,7 +52,7 @@ const STR = {
 
   // Overview
   'ov.title': { zh: '总览', en: 'Overview' },
-  'ov.treeTitle': { zh: '层级结构树', en: 'Layer structure tree' },
+  'ov.treeTitle': { zh: '张量名称树', en: 'Tensor name tree' },
   'ov.treeEmpty': { zh: '输入仓库 ID 并点击 Analyze 开始解析', en: 'Enter a repo ID and click Analyze to start parsing' },
   'ov.compTitle': { zh: '组成明细', en: 'Composition breakdown' },
   'ov.kvTitle': { zh: 'KV Cache 审计明细', en: 'KV Cache audit details' },
@@ -110,23 +110,16 @@ const STR = {
   'status.done': { zh: '解析完成：{shards} 个分片，{tensors} 个张量', en: 'Done: {shards} shards, {tensors} tensors' },
 
   // Structure tree
-  'tree.col.op': { zh: '算子', en: 'Op' },
+  'tree.col.op': { zh: '张量路径', en: 'Tensor path' },
   'tree.col.shape': { zh: 'Shape', en: 'Shape' },
   'tree.col.dtype': { zh: 'DType', en: 'DType' },
   'tree.col.params': { zh: '参数量', en: 'Params' },
   'tree.col.vram': { zh: '显存', en: 'VRAM' },
-  'tree.expertNote': {
-    zh: '路由专家（routed）：每专家同构，以下展示单一代表专家（参数量 ×{n} = 合计）。每 token 仅激活其中少数几个。',
-    en: 'Routed experts: all share the same shape; one representative shown (params ×{n} = total). Only a few activate per token.',
-  },
-  'tree.moeExperts': { zh: 'MoE 路由专家', en: 'MoE Experts (routed)' },
-  'tree.sharedExpert': { zh: '共享专家（始终激活）', en: 'Shared Expert (always active)' },
-  'tree.sharedExpertNote': {
-    zh: '共享专家不计入上述 ×{n} 路由专家数量，每层恒有 1 个、对所有 token 都激活（类似稠密 MLP）。',
-    en: 'The shared expert is NOT part of the ×{n} routed experts above: every layer has exactly 1 and it is active for all tokens (like a dense MLP).',
+  'tree.prefixHint': {
+    zh: '按名称从左到右展开；包含数字片段的分支默认折叠。',
+    en: 'Expand names from left to right; branches containing numeric segments start collapsed.',
   },
   'tree.paramsUnit': { zh: '参数', en: 'params' },
-  'tree.mlpDense': { zh: 'MLP（稠密）', en: 'MLP (dense)' },
 
   // Chart
   'chart.vramLabel': { zh: '显存占用 (GB)', en: 'VRAM usage (GB)' },

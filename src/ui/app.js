@@ -8,7 +8,7 @@
 
 import '../styles.css';
 import { analyze } from '../engine/index.js';
-import { buildTree } from '../tree/index.js';
+import { buildTensorNameTree, buildTree } from '../tree/index.js';
 import { estimateVRAM, buildEffBppMap } from '../vram/index.js';
 import { renderTree, updateTreeBytes } from './treeView.js';
 import { renderChart, COLORS } from './chart.js';
@@ -103,7 +103,7 @@ function buildLayout() {
 }
 
 export function mountApp(rootEl) {
-  let state = null; // { config, tree, tensors, shardCount }
+  let state = null; // { config, tree, tensorNameTree, tensors, shardCount }
   let lastRepo = '';
 
   const $ = (id) => rootEl.querySelector('#' + id);
@@ -146,7 +146,7 @@ export function mountApp(rootEl) {
     renderChart($('chart'), est);
     renderComposition(est);
     renderKVDetails(est);
-    updateTreeBytes($('tree'), state.tree, buildEffMap());
+    updateTreeBytes($('tree'), state.tensorNameTree, buildEffMap());
 
     // VRAM breakdown card (no GPU recommendation).
     const summaryEl = $('summary');
@@ -286,6 +286,7 @@ export function mountApp(rootEl) {
       state = {
         config: result.config,
         tree: buildTree(result.tensors),
+        tensorNameTree: buildTensorNameTree(result.tensors),
         tensors: result.tensors,
         shardCount: result.shardCount,
       };
@@ -303,7 +304,7 @@ export function mountApp(rootEl) {
       }
       rootEl.querySelectorAll('.chips button').forEach((x) => x.classList.remove('active'));
 
-      renderTree($('tree'), state.tree, buildEffMap());
+      renderTree($('tree'), state.tensorNameTree, buildEffMap());
       recompute();
       setStatus(t('status.done', { shards: result.shardCount, tensors: result.tensors.length }), 'ok');
     } catch (e) {
@@ -356,7 +357,7 @@ export function mountApp(rootEl) {
     if (state) {
       $('repo').value = lastRepo;
       renderStats();
-      renderTree($('tree'), state.tree, buildEffMap());
+      renderTree($('tree'), state.tensorNameTree, buildEffMap());
       recompute();
     }
   }

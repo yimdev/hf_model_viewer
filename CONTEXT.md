@@ -44,34 +44,10 @@ _Avoid_: Automatic architecture guessing, rule-based routing
 A Model Architecture that is not explicitly included in the Architecture Layout Catalog; its KV Cache VRAM usage is unknown and must not be estimated through a generic formula or heuristic fallback.
 _Avoid_: Guessed result, default MHA
 
-**Layer View**:
-Organizes tensors by axis-qualified Layer ID and presents each layer's tensor structure separately, preserving topology differences between layers.
-_Avoid_: Current view, old view
+**Tensor Name Tree**:
+A lossless presentation of parsed tensor metadata as a left-to-right prefix tree of dot-delimited tensor names; branch rows show cumulative prefixes and direct child counts, while leaves retain the original Shape, DType, parameters, and bytes.
+_Avoid_: Layer View, architecture tree
 
-**Cross-Layer Aggregate View**:
-Organizes tensor structures that repeat across multiple Layers while retaining the axis-qualified Layer IDs covered by each aggregate, making recurring patterns and structural variants visible.
-_Avoid_: Key view, compressed view
-
-**Structure Presentation Heuristic**:
-Automatically organizes Layer and Cross-Layer Aggregate Views using parsed tensor names, exact Shapes, and DTypes only; it does not determine model architecture, KV Cache layout, or verified support status.
-_Avoid_: Architecture inference, KV Cache layout inference
-
-**Layer-Normalized Tensor Key**:
-The full tensor path after replacing the recognized Layer ID segment with a placeholder; module path segments remain intact and are not preclassified into display categories such as attention or FFN.
-_Avoid_: Key, tensor shorthand, module category
-
-**Cross-Layer Aggregate Identity**:
-The combination of a Layer-Normalized Tensor Key, an exactly ordered Shape, and the on-disk DType; a difference in any component creates a separate aggregate.
-_Avoid_: Parameter-count-only grouping, tensor-name-only grouping
-
-**Routed-Expert Repetition Axis**:
-The Expert ID in a routed-expert path is a repetition dimension independent of the Layer ID; aggregates retain the actual expert multiplicity for each layer, and only experts with identical aggregate identities share a representative structure.
-_Avoid_: Global expert multiplier, counting shared experts as routed experts
-
-**Model-Level Tensor**:
-A tensor that does not belong to any Layer repetition axis; it remains visible in both structure views but does not participate in cross-layer aggregation or receive a fabricated Layer ID.
-_Avoid_: Other outside Layers, layerless aggregate
-
-**Axis-Qualified Layer ID**:
-A Layer identifier composed of a repetition-path axis and a numeric index within that axis, such as `model.layers:7` or `mtp:0`; equal numeric indices do not imply the same Layer.
-_Avoid_: Bare Layer index, cross-axis Layer ID
+**Numeric Path Branch**:
+A Tensor Name Tree branch whose accumulated path contains a standalone non-negative integer segment; it is independently collapsible and carries no inferred Layer or Expert meaning.
+_Avoid_: Layer ID, Expert ID, architecture inference

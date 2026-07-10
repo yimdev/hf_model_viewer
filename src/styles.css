@@ -255,60 +255,71 @@ input[type="range"] { width: 100%; accent-color: var(--primary); }
 }
 .summary-grid .stat b { display: block; font-size: 16px; }
 
-details.layer {
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  margin-bottom: 6px;
-  padding: 0 10px;
-  background: #fff;
-}
-details.layer > summary {
-  cursor: pointer;
-  padding: 10px 0;
-  display: flex;
-  justify-content: space-between;
+.tensor-tree-hint { margin: -2px 0 10px; color: var(--muted); font-size: 12px; }
+.tensor-name-tree { min-width: 760px; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+#tree { overflow-x: auto; }
+.tensor-tree-header, .tensor-leaf {
+  display: grid;
+  grid-template-columns: minmax(340px, 1fr) 110px 90px 110px 100px;
   align-items: center;
-  font-weight: 600;
+  column-gap: 8px;
 }
-details.layer > summary .meta {
-  font-weight: 400;
+.tensor-tree-header {
+  min-width: 760px;
+  padding: 0 10px 6px;
   color: var(--muted);
-  font-size: 12px;
-  text-align: right;
-}
-details.layer > summary .meta b { color: var(--text); }
-
-details.block {
-  margin: 6px 0 6px 0;
-  border-left: 2px solid var(--border);
-  padding-left: 10px;
-}
-details.block > summary {
-  cursor: pointer;
-  padding: 6px 0;
-  font-weight: 600;
-  color: var(--primary-d);
-}
-details.block > summary .meta { color: var(--muted); font-weight: 400; font-size: 12px; margin-left: 8px; }
-
-table.ops {
-  width: 100%;
-  border-collapse: collapse;
-  margin: 8px 0 12px;
-  font-size: 12px;
-}
-table.ops th, table.ops td {
-  text-align: left;
-  padding: 6px 8px;
-  border-bottom: 1px solid var(--border);
-}
-table.ops th { color: var(--muted); font-weight: 600; }
-table.ops td.num { text-align: right; font-variant-numeric: tabular-nums; }
-table.ops code {
-  background: var(--code-bg);
-  padding: 1px 5px;
-  border-radius: 4px;
   font-size: 11px;
+  font-weight: 600;
+}
+.tensor-tree-header span:nth-child(n + 4) { text-align: right; }
+.tensor-branch { margin: 0; background: #fff; }
+.tensor-branch > summary {
+  min-height: 38px;
+  padding: 0 10px 0 calc(10px + var(--tree-depth) * 16px);
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  list-style: none;
+}
+.tensor-branch > summary::-webkit-details-marker { display: none; }
+.tensor-branch > summary:hover { background: #f8fafc; }
+.tensor-branch.numeric-branch > summary { background: #fafbfc; }
+.tensor-path { min-width: 0; overflow-wrap: anywhere; }
+.tensor-path-parent { color: #a0a8b5; }
+.tensor-path-current { color: var(--text); font-weight: 600; }
+.tensor-child-count { color: var(--muted); font-variant-numeric: tabular-nums; }
+.tensor-chevron {
+  width: 7px;
+  height: 7px;
+  border-right: 1.5px solid var(--muted);
+  border-bottom: 1.5px solid var(--muted);
+  transform: rotate(-45deg);
+  transition: transform 120ms ease;
+  margin-left: 2px;
+}
+.tensor-branch[open] > summary .tensor-chevron { transform: rotate(45deg) translateY(-2px); }
+.tensor-branch-meta {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+  font-weight: 400;
+}
+.tensor-leaf {
+  min-height: 38px;
+  padding: 0 10px 0 calc(10px + var(--tree-depth) * 16px);
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+.tensor-leaf:last-child { border-bottom: 0; }
+.tensor-leaf:hover { background: #f8fafc; }
+.tensor-shape, .tensor-dtype { color: var(--muted); font-size: 11px; }
+.tensor-number { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+@media (max-width: 900px) {
+  .tensor-branch-meta { display: none; }
 }
 
 .empty {

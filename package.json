@@ -6,7 +6,7 @@
   "description": "Zero-download LLM architecture and VRAM estimator for GitHub Pages and browser extensions",
   "scripts": {
     "dev": "BUILD_TARGET=web vite",
-    "test": "node --no-warnings --test test/vram/*.test.js",
+    "test": "node --no-warnings --test test/vram/*.test.js test/tree/*.test.js",
     "build:web": "BUILD_TARGET=web vite build",
     "build:ext": "BUILD_TARGET=ext vite build",
     "preview": "BUILD_TARGET=web vite preview"
