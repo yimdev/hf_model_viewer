@@ -36,11 +36,13 @@ function collectTensorStats(tensors, effectiveBppByTensorName) {
   return { params, bytes, tensors: tensors.length };
 }
 
-function pathLabel(prefix) {
-  const split = prefix.lastIndexOf('.');
-  const parent = split < 0 ? '' : prefix.slice(0, split + 1);
-  const current = split < 0 ? prefix : prefix.slice(split + 1);
-  return `<span class="tensor-path-parent">${esc(parent)}</span><span class="tensor-path-current">${esc(current)}</span>`;
+function pathLabel(prefix, currentNode) {
+  const currentEnd = currentNode.prefix.length;
+  const currentStart = currentEnd - currentNode.segment.length;
+  const parent = prefix.slice(0, currentStart);
+  const current = prefix.slice(currentStart, currentEnd);
+  const descendant = prefix.slice(currentEnd);
+  return `<span class="tensor-path-parent">${esc(parent)}</span><span class="tensor-path-current">${esc(current)}</span><span class="tensor-path-descendant">${esc(descendant)}</span>`;
 }
 
 function collapseSingleChild(node) {
@@ -92,12 +94,12 @@ function repeatBadge(node) {
     : '';
 }
 
-function tensorLeaf(node, effectiveBppByTensorName, depth) {
+function tensorLeaf(node, effectiveBppByTensorName, depth, currentNode = node) {
   const tensor = node.tensors[0];
   const stats = collectTensorStats(node.tensors, effectiveBppByTensorName);
   return `
     <div class="tensor-leaf" style="--tree-depth:${depth}">
-      <div class="tensor-path">${pathLabel(tensor.name)}${repeatBadge(node)}</div>
+      <div class="tensor-path">${pathLabel(tensor.name, currentNode)}${repeatBadge(node)}</div>
       <code class="tensor-shape">${esc(tensor.shape.join('×'))}</code>
       <code class="tensor-dtype">${esc(tensor.dtype)}</code>
       <span class="tensor-number">${fmtNum(stats.params)}</span>
@@ -110,7 +112,7 @@ function renderVisibleNode(start, effectiveBppByTensorName, statsFor, depth) {
   const node = collapsed.node;
 
   if (node.children.length === 0) {
-    return tensorLeaf(node, effectiveBppByTensorName, depth);
+    return tensorLeaf(node, effectiveBppByTensorName, depth, start);
   }
 
   const stats = statsFor(node);
@@ -127,7 +129,7 @@ function renderVisibleNode(start, effectiveBppByTensorName, statsFor, depth) {
   return `
     <details class="tensor-branch${numericClass}">
       <summary style="--tree-depth:${depth}">
-        <span class="tensor-path">${pathLabel(node.prefix)}</span>
+        <span class="tensor-path">${pathLabel(node.prefix, start)}</span>
         <span class="tensor-child-count">(${directEntries})</span>
         ${repeatBadge(repetitionNode)}
         <span class="tensor-chevron" aria-hidden="true"></span>
