@@ -171,3 +171,33 @@ export function hy3Fixture() {
     tensors,
   };
 }
+
+export function qwen36A3BFixture() {
+  const layerTypes = Array.from(
+    { length: 40 },
+    (_, layer) => ((layer + 1) % 4 === 0 ? 'full_attention' : 'linear_attention'),
+  );
+  return {
+    config: {
+      architectures: ['Qwen3_5MoeForConditionalGeneration'],
+      model_type: 'qwen3_5_moe',
+      text_config: {
+        dtype: 'bfloat16',
+        layer_types: layerTypes,
+        linear_conv_kernel_dim: 4,
+        linear_key_head_dim: 128,
+        linear_num_key_heads: 16,
+        linear_num_value_heads: 32,
+        linear_value_head_dim: 128,
+        mamba_ssm_dtype: 'float32',
+        max_position_embeddings: 262144,
+        mtp_num_hidden_layers: 1,
+        num_hidden_layers: 40,
+        num_key_value_heads: 2,
+        head_dim: 256,
+      },
+      transformers_version: '4.57.1',
+    },
+    tensors: [],
+  };
+}

@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 
 import { computeKV } from '../../src/vram/kv/index.js';
 import { makeBuffer } from '../../src/vram/kv/profile-primitives.js';
-import { deepseekV4ProFixture, glm52Fixture, hy3Fixture } from './profile-fixtures.js';
+import {
+  deepseekV4ProFixture, glm52Fixture, hy3Fixture, qwen36A3BFixture,
+} from './profile-fixtures.js';
 
 const SOURCES = Object.freeze({
   glm52: {
@@ -25,6 +27,10 @@ const SOURCES = Object.freeze({
   hy3Preview: {
     repoId: 'tencent/Hy3-preview',
     commitId: 'b53bd705bef15f0a9e52eade60a4353eaaa6c6b8',
+  },
+  qwen36A3B: {
+    repoId: 'Qwen/Qwen3.6-35B-A3B',
+    commitId: '995ad96eacd98c81ed38be0c5b274b04031597b0',
   },
 });
 
@@ -258,6 +264,39 @@ test('Hunyuan 3 preview repository alias is independently audited', () => {
   assert.equal(result.totalBytes, 327_680);
 });
 
+test('Qwen 3.6 35B A3B returns full-attention KV and recurrent linear-attention states', () => {
+  const result = calculate(SOURCES.qwen36A3B, qwen36A3BFixture(), { batch: 1, seq: 1 });
+
+  assert.equal(result.calculation.status, 'computed');
+  assert.equal(result.assurance.status, 'verified');
+  assert.equal(result.profile.id, 'qwen3.6-35b-a3b-semantic-v1');
+  assert.equal(result.profile.layout.id, 'qwen3.6-hybrid-gdn-gqa-v1');
+  assert.equal(result.totalBytes, 64_409_600);
+  assert.deepEqual(
+    result.buffers.map(({ id, bytes, dtype }) => ({ id, bytes, dtype })),
+    [
+      { id: 'full-attention.key', bytes: 10_240, dtype: 'BF16' },
+      { id: 'full-attention.value', bytes: 10_240, dtype: 'BF16' },
+      { id: 'linear-attention.conv-state', bytes: 1_474_560, dtype: 'BF16' },
+      { id: 'linear-attention.recurrent-state', bytes: 62_914_560, dtype: 'F32' },
+    ],
+  );
+});
+
+test('Qwen 3.6 config drift calculates from current hybrid-attention dimensions', () => {
+  const fixture = qwen36A3BFixture();
+  fixture.config.text_config.linear_num_value_heads = 16;
+  const result = calculate(SOURCES.qwen36A3B, fixture, { batch: 1, seq: 1 });
+
+  assert.equal(result.calculation.status, 'computed');
+  assert.equal(result.assurance.status, 'warning');
+  assert.equal(result.totalBytes, 32_583_680);
+  assert.deepEqual(
+    result.assurance.warnings[0].differences.map((difference) => difference.configPath),
+    ['text_config.linear_num_value_heads'],
+  );
+});
+
 test('current config max context controls workload validation', () => {
   const fixture = glm52Fixture();
   fixture.config.max_position_embeddings = 4096;
@@ -294,6 +333,11 @@ test('ragged workloads use current Layout semantics', () => {
   const deepseekFixture = deepseekV4ProFixture();
   const lengths = [3, 4, 7, 128, 129];
   const deepseek = calculate(SOURCES.deepseek, deepseekFixture, { sequenceLengths: lengths });
+  const qwen36 = calculate(
+    SOURCES.qwen36A3B,
+    qwen36A3BFixture(),
+    { sequenceLengths: [1, 3] },
+  );
   const independentlySummed = lengths.reduce(
     (sum, seq) => sum + calculate(SOURCES.deepseek, deepseekFixture, { batch: 1, seq }).totalBytes,
     0,
@@ -302,12 +346,14 @@ test('ragged workloads use current Layout semantics', () => {
   assert.equal(glm.totalBytes, (1 + 2048 + 2049) * 95_232);
   assert.equal(hy3.totalBytes, 4_026_859_520);
   assert.equal(deepseek.totalBytes, independentlySummed);
+  assert.equal(qwen36.totalBytes, 128_860_160);
 });
 
 test('Profile workload semantics preserve zero-workload differences', () => {
   for (const [source, fixture] of [
     [SOURCES.glm52, glm52Fixture()],
     [SOURCES.hy3, hy3Fixture()],
+    [SOURCES.qwen36A3B, qwen36A3BFixture()],
   ]) {
     assert.equal(calculate(source, fixture, { batch: 0, seq: 128 }).totalBytes, 0);
     assert.equal(calculate(source, fixture, { sequenceLengths: [] }).totalBytes, 0);

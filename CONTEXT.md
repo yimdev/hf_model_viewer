@@ -28,6 +28,10 @@ _Avoid_: Hybrid layout, layout composition
 A precisely defined resident cache structure within a complete Layout; it may reuse representation and accounting mechanisms but cannot replace an Architecture Profile's complete Layout definition and end-to-end verification.
 _Avoid_: Generic layout, shared formula as proof of correctness
 
+**Recurrent Attention State**:
+A fixed-size, per-active-sequence KV Cache Buffer Primitive that a linear-attention layer carries across decoding steps, including its causal-convolution history and recurrent key-value matrix; it is part of the Effective KV Cache Payload even though it has no growing token axis.
+_Avoid_: Full-context key/value buffer, temporary attention workspace, model weights
+
 **Verified Layout**:
 A dedicated Layout whose current Model Repository Identifier, immutable commit, and every algorithm-dependent config input equal the Architecture Profile's audited baseline; other valid revisions may still produce a warning calculation but are not Verified.
 _Avoid_: Treating a warning calculation as Verified, primitive-only test coverage

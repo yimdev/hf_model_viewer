@@ -2,11 +2,15 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { estimateVRAM } from '../../src/vram/estimate.js';
-import { glm52Fixture } from './profile-fixtures.js';
+import { glm52Fixture, qwen36A3BFixture } from './profile-fixtures.js';
 
 const GLM_SOURCE = Object.freeze({
   repoId: 'zai-org/GLM-5.2',
   commitId: 'b4734de4facf877f85769a911abafc5283eab3d9',
+});
+const QWEN36_SOURCE = Object.freeze({
+  repoId: 'Qwen/Qwen3.6-35B-A3B',
+  commitId: '995ad96eacd98c81ed38be0c5b274b04031597b0',
 });
 
 test('Complete VRAM Estimate stays unknown when generic config dimensions are insufficient', () => {
@@ -69,6 +73,22 @@ test('warning Calculation Assurance still permits a Complete VRAM Estimate', () 
   assert.equal(result.vTotal, result.vWeights + result.vKV);
   assert.equal(result.buffers.reduce((sum, buffer) => sum + buffer.bytes, 0), 95_232);
   assert.deepEqual(result.composition.find((item) => item.key === 'kv').dtypes, ['BF16']);
+});
+
+test('Qwen 3.6 hybrid KV states complete total VRAM with mixed cache DTypes', () => {
+  const fixture = qwen36A3BFixture();
+  const result = estimateVRAM({
+    source: QWEN36_SOURCE,
+    config: fixture.config,
+    tensors: fixture.tensors,
+    workload: { batch: 2, seq: 128 },
+  });
+
+  assert.equal(result.complete, true);
+  assert.equal(result.assurance.status, 'verified');
+  assert.equal(result.vKV, 134_021_120 / (1024 ** 3));
+  assert.equal(result.vTotal, result.vKV);
+  assert.deepEqual(result.composition.find((item) => item.key === 'kv').dtypes, ['BF16', 'F32']);
 });
 
 test('Complete VRAM Estimate forwards ragged sequence lengths', () => {
