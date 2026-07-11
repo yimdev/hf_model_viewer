@@ -8,7 +8,7 @@
  * never touching the weight data.
  * ------------------------------------------------------------ */
 
-import { t } from '../i18n.js';
+import { IngestionError } from './errors.js';
 
 const HEADER_LEN_BYTES = 8;
 
@@ -18,7 +18,7 @@ export async function readSafetensorsHeader(net, baseUrl, fileName, headers = {}
   // 1) Read the first 8 bytes -> header length.
   const lenBuf = await net.range(url, 0, HEADER_LEN_BYTES - 1, headers);
   if (lenBuf.byteLength < HEADER_LEN_BYTES) {
-    throw new Error(t('err.badSafetensors', { file: fileName }));
+    throw new IngestionError('invalid_safetensors_header', { file: fileName });
   }
   const dv = new DataView(lenBuf.buffer, lenBuf.byteOffset, lenBuf.byteLength);
   const headerLen = Number(dv.getBigUint64(0, true)); // little-endian

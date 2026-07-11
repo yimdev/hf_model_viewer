@@ -6,16 +6,13 @@
  *   parallel HTTP Range -> per-shard header JSON -> flat tensor list
  * ------------------------------------------------------------ */
 
-import { makeNet } from '../platform/net.js';
+import { makeFetchTransport } from '../platform/net.js';
 import { readSafetensorsHeader } from './safetensors.js';
 import { mapLimit } from './util.js';
-import { t } from '../i18n.js';
+import { IngestionError } from './errors.js';
 
-const CONFIG_URL = (repo) => `https://huggingface.co/${repo}/resolve/main/config.json`;
-const INDEX_URL = (repo) => `https://huggingface.co/${repo}/resolve/main/model.safetensors.index.json`;
-const SHARD_BASE = (repo) => `https://huggingface.co/${repo}/resolve/main`;
-
-const NOT_SAFETENSORS = t('err.noSafetensors');
+const REVISION_URL = (repo) => `https://huggingface.co/api/models/${repo}/revision/main`;
+const SHARD_BASE = (repo, commitId) => `https://huggingface.co/${repo}/resolve/${commitId}`;
 
 /**
  * Parse a Hugging Face repo, returning { repoId, config, tensors, shardFiles, shardCount }.
@@ -24,59 +21,93 @@ const NOT_SAFETENSORS = t('err.noSafetensors');
  * @param {string} [opts.token]  optional Hugging Face Access Token (gated / private models)
  * @param {(done:number,total:number,file:string)=>void} [opts.onShard]  shard progress callback
  */
-export async function analyze(repoId, { token, onShard } = {}) {
-  if (!repoId || !/^[\w.-]+\/[\w.-]+/.test(repoId)) {
-    throw new Error(t('err.badRepoId'));
-  }
+export function createModelIngestion({ transport }) {
+  if (!transport) throw new TypeError('Model ingestion requires a transport adapter');
 
-  const net = makeNet();
-  const auth = token ? { Authorization: `Bearer ${token}` } : {};
+  return async function ingest(repoId, { token, onShard } = {}) {
+    if (!repoId || !/^[\w.-]+\/[\w.-]+$/.test(repoId)) {
+      throw new IngestionError('invalid_repo_id', { repoId });
+    }
+
+    const auth = token ? { Authorization: `Bearer ${token}` } : {};
+
+    let source;
+    try {
+      const metadata = JSON.parse(await transport.text(REVISION_URL(repoId), auth));
+      source = { repoId: metadata.id, commitId: metadata.sha };
+      if (
+        typeof source.repoId !== 'string'
+        || !/^[\w.-]+\/[\w.-]+$/.test(source.repoId)
+        || !/^[0-9a-f]{40}$/.test(source.commitId)
+      ) {
+        throw new Error('Invalid repository metadata');
+      }
+    } catch (error) {
+      throw new IngestionError(
+        'provenance_fetch_failed',
+        { repoId, message: error.message },
+        { cause: error },
+      );
+    }
+
+    const base = SHARD_BASE(source.repoId, source.commitId);
 
   // 1) config.json
-  let config;
-  try {
-    config = JSON.parse(await net.text(CONFIG_URL(repoId), auth));
-  } catch (e) {
-    throw new Error(`${t('err.configFetch')}${e.message}`);
-  }
+    let config;
+    try {
+      config = JSON.parse(await transport.text(`${base}/config.json`, auth));
+    } catch (error) {
+      throw new IngestionError('config_fetch_failed', { message: error.message }, { cause: error });
+    }
 
   // 2) Shard discovery: prefer index.json, fall back to single model.safetensors.
-  const base = SHARD_BASE(repoId);
-  let shardFiles = [];
-  try {
-    const idx = JSON.parse(await net.text(INDEX_URL(repoId), auth));
-    shardFiles = [...new Set(Object.values(idx.weight_map))];
-    if (idx.metadata) config.__hf_index_meta = idx.metadata;
-  } catch {
+    let shardFiles = [];
     try {
-      await readSafetensorsHeader(net, base, 'model.safetensors', auth);
-      shardFiles = ['model.safetensors'];
+      const idx = JSON.parse(await transport.text(`${base}/model.safetensors.index.json`, auth));
+      shardFiles = [...new Set(Object.values(idx.weight_map))];
+      if (idx.metadata) config = { ...config, __hf_index_meta: idx.metadata };
     } catch {
-      throw new Error(NOT_SAFETENSORS);
+      try {
+        await readSafetensorsHeader(transport, base, 'model.safetensors', auth);
+        shardFiles = ['model.safetensors'];
+      } catch {
+        throw new IngestionError('safetensors_unavailable', { repoId: source.repoId });
+      }
     }
-  }
 
-  if (!shardFiles.length) throw new Error(NOT_SAFETENSORS);
+    if (!shardFiles.length) {
+      throw new IngestionError('safetensors_unavailable', { repoId: source.repoId });
+    }
 
   // 3) Fetch all shard headers in parallel (cap 16 concurrent, keeps huge
   //    MoE repos under ~3s).
-  const headersMap = {};
-  let done = 0;
-  await mapLimit(shardFiles, 16, async (file) => {
-    headersMap[file] = await readSafetensorsHeader(net, base, file, auth);
-    done += 1;
-    onShard?.(done, shardFiles.length, file);
-  });
+    const headersMap = {};
+    let done = 0;
+    await mapLimit(shardFiles, 16, async (file) => {
+      headersMap[file] = await readSafetensorsHeader(transport, base, file, auth);
+      done += 1;
+      onShard?.(done, shardFiles.length, file);
+    });
 
   // 4) Merge into a flat tensor list.
-  const tensors = [];
-  for (const file of shardFiles) {
-    const h = headersMap[file];
-    for (const [name, meta] of Object.entries(h)) {
-      if (name === '__metadata__') continue;
-      tensors.push({ name, dtype: meta.dtype, shape: meta.shape, shard: file });
+    const tensors = [];
+    for (const file of shardFiles) {
+      const h = headersMap[file];
+      for (const [name, meta] of Object.entries(h)) {
+        if (name === '__metadata__') continue;
+        tensors.push({ name, dtype: meta.dtype, shape: meta.shape, shard: file });
+      }
     }
-  }
 
-  return { repoId, config, tensors, shardFiles, shardCount: shardFiles.length };
+    return {
+      ...source,
+      config,
+      tensors,
+      shardFiles,
+      shardCount: shardFiles.length,
+    };
+  };
 }
+
+export const analyze = createModelIngestion({ transport: makeFetchTransport() });
+export { IngestionError } from './errors.js';

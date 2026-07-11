@@ -8,29 +8,15 @@
  * ------------------------------------------------------------ */
 
 import { fmtNum, fmtBytesGB, esc } from './format.js';
-import { tensorParams } from '../tree/buildTree.js';
 import { t } from '../i18n.js';
 
-function pCount(tensor) {
-  return tensor.params != null ? tensor.params : tensorParams(tensor.shape);
-}
-
-function effBpp(name, effectiveBppByTensorName) {
-  return effectiveBppByTensorName.get(name) ?? 2;
-}
-
-function tensorByte(tensor, effectiveBppByTensorName) {
-  return pCount(tensor) * effBpp(tensor.name, effectiveBppByTensorName);
-}
-
-function collectTensorStats(tensors, effectiveBppByTensorName) {
+function collectTensorStats(tensors) {
   let params = 0;
   let bytes = 0;
 
   for (const tensor of tensors) {
-    const tensorBytes = tensorByte(tensor, effectiveBppByTensorName);
-    params += pCount(tensor);
-    bytes += tensorBytes;
+    params += tensor.params;
+    bytes += tensor.weightBytes;
   }
 
   return { params, bytes, tensors: tensors.length };
@@ -63,30 +49,6 @@ function collapseSingleChild(node) {
   return { node: current, containsNumeric, repetitionNode };
 }
 
-function collectSubtreeStats(node, effectiveBppByTensorName, onNode) {
-  const ownStats = collectTensorStats(node.tensors, effectiveBppByTensorName);
-  let { params, bytes, tensors } = ownStats;
-  for (const child of node.children) {
-    const childStats = collectSubtreeStats(child, effectiveBppByTensorName, onNode);
-    params += childStats.params;
-    bytes += childStats.bytes;
-    tensors += childStats.tensors;
-  }
-
-  const stats = { params, bytes, tensors };
-  onNode(node, stats);
-  return stats;
-}
-
-function createStats(tree, effectiveBppByTensorName) {
-  const cache = new WeakMap();
-  collectSubtreeStats(tree, effectiveBppByTensorName, (node, stats) => {
-    cache.set(node, stats);
-  });
-
-  return (node) => cache.get(node);
-}
-
 function repeatBadge(node) {
   const ids = node.repeatIds.join(', ');
   return node.repeatCount > 1
@@ -94,36 +56,36 @@ function repeatBadge(node) {
     : '';
 }
 
-function tensorLeaf(node, effectiveBppByTensorName, depth, currentNode = node) {
+function tensorLeaf(node, depth, currentNode = node) {
   const tensor = node.tensors[0];
-  const stats = collectTensorStats(node.tensors, effectiveBppByTensorName);
+  const stats = collectTensorStats(node.tensors);
   return `
     <div class="tensor-leaf" style="--tree-depth:${depth}">
       <div class="tensor-path">${pathLabel(tensor.name, currentNode)}${repeatBadge(node)}</div>
       <code class="tensor-shape">${esc(tensor.shape.join('×'))}</code>
       <code class="tensor-dtype">${esc(tensor.dtype)}</code>
       <span class="tensor-number">${fmtNum(stats.params)}</span>
-      <span class="tensor-number byte-cell" data-key="p:${esc(node.prefix)}">${fmtBytesGB(stats.bytes)}</span>
+      <span class="tensor-number byte-cell">${fmtBytesGB(stats.bytes)}</span>
     </div>`;
 }
 
-function renderVisibleNode(start, effectiveBppByTensorName, statsFor, depth) {
+function renderVisibleNode(start, depth) {
   const collapsed = collapseSingleChild(start);
   const node = collapsed.node;
 
   if (node.children.length === 0) {
-    return tensorLeaf(node, effectiveBppByTensorName, depth, start);
+    return tensorLeaf(node, depth, start);
   }
 
-  const stats = statsFor(node);
+  const stats = node.stats;
   const directEntries = node.directChildCount;
   const numericClass = collapsed.containsNumeric ? ' numeric-branch' : '';
   const repetitionNode = collapsed.repetitionNode || node;
   const terminalRows = node.tensors.length > 0
-    ? tensorLeaf(node, effectiveBppByTensorName, depth + 1)
+    ? tensorLeaf(node, depth + 1)
     : '';
   const childRows = node.children
-    .map((child) => renderVisibleNode(child, effectiveBppByTensorName, statsFor, depth + 1))
+    .map((child) => renderVisibleNode(child, depth + 1))
     .join('');
 
   return `
@@ -133,24 +95,15 @@ function renderVisibleNode(start, effectiveBppByTensorName, statsFor, depth) {
         <span class="tensor-child-count">(${directEntries})</span>
         ${repeatBadge(repetitionNode)}
         <span class="tensor-chevron" aria-hidden="true"></span>
-        <span class="tensor-branch-meta">${fmtNum(stats.params)} ${esc(t('tree.paramsUnit'))} · <span class="byte-cell" data-key="p:${esc(node.prefix)}">${fmtBytesGB(stats.bytes)}</span></span>
+        <span class="tensor-branch-meta">${fmtNum(stats.params)} ${esc(t('tree.paramsUnit'))} · <span class="byte-cell">${fmtBytesGB(stats.bytes)}</span></span>
       </summary>
       ${terminalRows}${childRows}
     </details>`;
 }
 
-function buildByteMap(tree, effectiveBppByTensorName) {
-  const bytes = new Map();
-  collectSubtreeStats(tree, effectiveBppByTensorName, (node, stats) => {
-    bytes.set(`p:${node.prefix}`, stats.bytes);
-  });
-  return bytes;
-}
-
-export function renderTree(container, tree, effectiveBppByTensorName) {
-  const statsFor = createStats(tree, effectiveBppByTensorName);
+export function renderTree(container, tree) {
   const rows = tree.children
-    .map((child) => renderVisibleNode(child, effectiveBppByTensorName, statsFor, 0))
+    .map((child) => renderVisibleNode(child, 0))
     .join('');
   container.innerHTML = `
     <p class="tensor-tree-hint">${esc(t('tree.prefixHint'))}</p>
@@ -170,14 +123,5 @@ export function renderTree(container, tree, effectiveBppByTensorName) {
         descendant.open = false;
       });
     });
-  });
-}
-
-/** Refresh byte totals without rebuilding the DOM, preserving open branches. */
-export function updateTreeBytes(container, tree, effectiveBppByTensorName) {
-  const byteMap = buildByteMap(tree, effectiveBppByTensorName);
-  container.querySelectorAll('.byte-cell').forEach((element) => {
-    const key = element.getAttribute('data-key');
-    if (byteMap.has(key)) element.textContent = fmtBytesGB(byteMap.get(key));
   });
 }

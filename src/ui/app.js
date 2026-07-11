@@ -1,25 +1,18 @@
 /* ui/app.js — App orchestration
  * ------------------------------------------------------------
  * Two-column layout: left = config & calc controls, right = results.
- * Pipeline: analyze -> buildTree -> estimateVRAM -> tree + overview.
+ * Pipeline: application session -> Tensor Metadata Index -> tree + overview.
  * Language: strings come from i18n (t); switching re-paints the shell.
  * ------------------------------------------------------------ */
 
 import '../styles.css';
-import { analyze } from '../engine/index.js';
-import { buildTensorNameTree, buildTree, groupRepeatedTensorSubtrees } from '../tree/index.js';
-import { estimateVRAM, buildEffBppMap } from '../vram/index.js';
-import { renderTree, updateTreeBytes } from './treeView.js';
+import { createApplicationSession } from '../app/session.js';
+import { renderTree } from './treeView.js';
 import { renderChart } from './chart.js';
+import { formatIngestionError } from './errors.js';
 import { fmtNum, fmtGB, esc } from './format.js';
+import { renderKVDetails } from './kvDetailsView.js';
 import { t, getLang, setLang, onLangChange } from '../i18n.js';
-
-// Read model max context length: prefer max_position_embeddings, fall back
-// to max_sequence_length / max_position_embedding.
-function getMaxContextLength(config) {
-  const v = config.max_position_embeddings ?? config.max_sequence_length ?? config.max_position_embedding;
-  return typeof v === 'number' && v > 0 ? v : null;
-}
 
 function buildLayout() {
   const lang = getLang();
@@ -89,14 +82,11 @@ function buildLayout() {
 }
 
 export function mountApp(rootEl) {
-  let state = null; // { config, tree, tensorNameTree, tensors, shardCount }
+  const session = createApplicationSession();
+  let state = null;
   let lastRepo = '';
 
   const $ = (id) => rootEl.querySelector('#' + id);
-
-  function buildEffMap() {
-    return buildEffBppMap(state.tensors);
-  }
 
   function setStatus(msg, kind = '') {
     const statusEl = $('status');
@@ -109,89 +99,28 @@ export function mountApp(rootEl) {
     const batch = parseInt($('batch').value, 10) || 1;
     const seq = parseInt($('seq').value, 10) || 8192;
 
-    const est = estimateVRAM(state.config, state.tree, {
-      batch,
-      seq,
-      tensors: state.tensors,
-    });
+    const sessionState = session.setWorkload({ batch, seq });
+    const est = sessionState.estimate;
 
     renderChart($('chart'), est);
-    renderKVDetails(est);
-    updateTreeBytes($('tree'), state.tensorNameTree, buildEffMap());
+    renderKVDetails($('kvdetails'), est);
 
     // VRAM breakdown card (no GPU recommendation).
     const summaryEl = $('summary');
     summaryEl.style.display = '';
-    const profile = est.kvProfile;
-    const maxCtx = getMaxContextLength(state.config);
+    const profile = est.profile;
+    const maxCtx = state.maxContextLength;
     const maxCtxStr = maxCtx ? `${fmtNum(maxCtx)} tokens` : '—';
     summaryEl.innerHTML = `
-      <div class="hw-note" style="font-size:13px">${esc(t('sum.total'))}<b>${fmtGB(est.vTotal)}</b> ｜ ${esc(t('sum.weights'))} ${fmtGB(est.vWeights)} ｜ KV ${est.kvUnknown ? '—' : fmtGB(est.vKV)} ｜ ${esc(t('sum.maxContext'))}${maxCtxStr}</div>
+      <div class="hw-note" style="font-size:13px">${esc(t('sum.total'))}<b>${fmtGB(est.vTotal)}</b> ｜ ${esc(t('sum.weights'))} ${fmtGB(est.vWeights)} ｜ KV ${est.complete ? fmtGB(est.vKV) : '—'} ｜ ${esc(t('sum.maxContext'))}${maxCtxStr}</div>
       ${profile ? `<div class="hw-note">${esc(t('sum.kvProfile'))}<span class="tag profile">${esc(profile.label)}</span> ｜ ${esc(t('sum.kvLayout'))}${esc(profile.layout.id)}@${esc(profile.layout.version)}</div>` : `<div class="hw-note incomplete">${esc(t('kv.totalUnknown'))}</div>`}
-      ${est.kvNote ? `<div class="hw-note dsa-note">${esc(est.kvNote)}</div>` : ''}
+      ${est.note ? `<div class="hw-note dsa-note">${esc(est.note)}</div>` : ''}
     `;
   }
 
-  function diagnosticLabel(diagnostic) {
-    if (!diagnostic) return t('kv.diag.unknown');
-    const key = `kv.diag.${diagnostic.code}`;
-    const translated = t(key);
-    return translated === key ? diagnostic.code : translated;
-  }
-
-  function layerGroupLabel(group = {}) {
-    const count = Number.isFinite(group.count) ? ` × ${group.count}` : '';
-    if (Array.isArray(group.range)) return `${group.label || t('kv.layers')} ${group.range[0]}–${group.range[1]}${count}`;
-    if (Array.isArray(group.indices)) return `${group.label || t('kv.layers')} [${group.indices.join(', ')}]${count}`;
-    return `${group.label || '—'}${count}`;
-  }
-
-  function renderKVDetails(est) {
-    const el = $('kvdetails');
-    if (est.kvStatus !== 'verified' || !est.kvProfile) {
-      const diagnostic = est.kvDiagnostic;
-      const ids = diagnostic?.modelClassIdentifiers?.join(', ') || '—';
-      const mismatches = diagnostic?.details?.mismatches || [];
-      const shown = mismatches.slice(0, 12);
-      const remainder = mismatches.length - shown.length;
-      el.innerHTML = `
-        <div class="kv-unknown">
-          <b>${esc(t('kv.unsupported'))}</b>
-          <div>${esc(diagnosticLabel(diagnostic))}</div>
-          <div><code>${esc(ids)}</code></div>
-          ${shown.length ? `<div class="kv-mismatch">${esc(t('kv.mismatches'))}${shown.map(esc).join(', ')}${remainder > 0 ? ` (+${remainder})` : ''}</div>` : ''}
-        </div>`;
-      return;
-    }
-
-    const profile = est.kvProfile;
-    const rows = est.kvBuffers.map((buffer) => `
-      <tr>
-        <td><b>${esc(buffer.label)}</b><code>${esc(buffer.id)}</code></td>
-        <td>${esc(layerGroupLabel(buffer.layerGroup))}</td>
-        <td class="num">${esc(fmtNum(buffer.elements))}</td>
-        <td><code>${esc(buffer.dtype)}</code> × ${buffer.bytesPerElement}B</td>
-        <td class="num">${esc(fmtNum(buffer.bytes))} B<br><span>${esc(fmtGB(buffer.gb))}</span></td>
-        <td><code>${esc(buffer.formula)}</code><small>${esc((buffer.evidenceIds || []).join(', '))}</small></td>
-      </tr>`).join('');
-    const evidence = profile.evidence.map((item) => `
-      <li><a href="${esc(item.url)}" target="_blank" rel="noreferrer">${esc(item.label)}</a><code>${esc(item.revision)}</code></li>`).join('');
-    el.innerHTML = `
-      <div class="kv-profile-head">
-        <div><b>${esc(profile.label)}</b><code>${esc(profile.id)}@${esc(profile.version)}</code></div>
-        <span class="tag verified">${esc(t('kv.verified'))}</span>
-      </div>
-      <div class="kv-layout-id">${esc(t('sum.kvLayout'))}<code>${esc(profile.layout.id)}@${esc(profile.layout.version)}</code></div>
-      <div class="kv-table-wrap"><table class="kv-table">
-        <thead><tr><th>${esc(t('kv.buffer'))}</th><th>${esc(t('kv.layers'))}</th><th>${esc(t('kv.elements'))}</th><th>${esc(t('kv.dtype'))}</th><th>${esc(t('kv.bytes'))}</th><th>${esc(t('kv.formula'))}</th></tr></thead>
-        <tbody>${rows}</tbody>
-        <tfoot><tr><th colspan="4">${esc(t('group.kv'))}</th><th class="num">${esc(fmtNum(est.kvBuffers.reduce((sum, buffer) => sum + buffer.bytes, 0)))} B<br><span>${esc(fmtGB(est.vKV))}</span></th><th></th></tr></tfoot>
-      </table></div>
-      <details class="kv-evidence"><summary>${esc(t('kv.evidence'))}</summary><ul>${evidence}</ul></details>`;
-  }
-
   function renderStats() {
-    const { config, tree } = state;
+    const { config, tensorMetadataIndex } = state;
+    const tree = tensorMetadataIndex.summary;
     const arch = Array.isArray(config.architectures)
       ? config.architectures.join(', ')
       : config.model_type || '—';
@@ -216,24 +145,20 @@ export function mountApp(rootEl) {
     analyzeBtn.disabled = true;
     setStatus(t('status.fetching'));
     try {
-      const result = await analyze(repo, {
-        token: $('token').value.trim() || undefined,
-        onShard: (done, total, file) => {
-          setStatus(t('status.shard', { done, total, file }));
-        },
+      session.setWorkload({
+        batch: parseInt($('batch').value, 10) || 1,
+        seq: parseInt($('seq').value, 10) || 8192,
       });
-      state = {
-        config: result.config,
-        tree: buildTree(result.tensors),
-        tensorNameTree: groupRepeatedTensorSubtrees(buildTensorNameTree(result.tensors)),
-        tensors: result.tensors,
-        shardCount: result.shardCount,
-      };
+      const sessionState = await session.load(repo, {
+        token: $('token').value.trim() || undefined,
+      });
+      if (sessionState.phase === 'error') throw sessionState.error;
+      state = sessionState.model;
       lastRepo = repo;
       renderStats();
 
       // Context Length defaults to this model's max context length.
-      const maxCtx = getMaxContextLength(result.config);
+      const maxCtx = state.maxContextLength;
       const seqInput = $('seq');
       if (maxCtx) {
         seqInput.max = String(Math.max(maxCtx, 131072));
@@ -243,15 +168,24 @@ export function mountApp(rootEl) {
       }
       rootEl.querySelectorAll('.chips button').forEach((x) => x.classList.remove('active'));
 
-      renderTree($('tree'), state.tensorNameTree, buildEffMap());
+      renderTree($('tree'), state.tensorMetadataIndex.tensorNameTree);
       recompute();
-      setStatus(t('status.done', { shards: result.shardCount, tensors: result.tensors.length }), 'ok');
+      setStatus(t('status.done', { shards: state.shardCount, tensors: state.tensors.length }), 'ok');
     } catch (e) {
-      setStatus(e.message || String(e), 'error');
+      setStatus(formatIngestionError(e), 'error');
     } finally {
       analyzeBtn.disabled = false;
     }
   }
+
+  session.subscribe((next) => {
+    if (next.phase !== 'loading') return;
+    if (next.progress) {
+      setStatus(t('status.shard', next.progress));
+    } else {
+      setStatus(t('status.fetching'));
+    }
+  });
 
   // ---- Shell render + event binding ----
   function bindShell() {
@@ -293,7 +227,7 @@ export function mountApp(rootEl) {
     if (state) {
       $('repo').value = lastRepo;
       renderStats();
-      renderTree($('tree'), state.tensorNameTree, buildEffMap());
+      renderTree($('tree'), state.tensorMetadataIndex.tensorNameTree);
       recompute();
     }
   }

@@ -6,7 +6,7 @@
   "description": "Zero-download LLM architecture and VRAM estimator",
   "scripts": {
     "dev": "vite",
-    "test": "node --no-warnings --test test/vram/*.test.js test/tree/*.test.js",
+    "test": "node --no-warnings --test test/app/*.test.js test/engine/*.test.js test/tree/*.test.js test/vram/*.test.js",
     "build": "vite build",
     "preview": "vite preview"
   },

@@ -2,17 +2,6 @@
 const GB = 1024 ** 3;
 const SEMANTIC_DTYPE_BYTES = Object.freeze({ BF16: 2, F32: 4 });
 
-export function sameArray(actual, expected) {
-  return Array.isArray(actual)
-    && actual.length === expected.length
-    && actual.every((value, index) => value === expected[index]);
-}
-
-export function tensorMatches(byName, name, shape, dtype) {
-  const tensor = byName.get(name);
-  return tensor && tensor.dtype === dtype && sameArray(tensor.shape, shape);
-}
-
 export function validateSequenceWorkload({
   batch,
   seq,
@@ -71,12 +60,6 @@ export function validateSequenceWorkload({
   return { entries: [{ length: seq, count: batch }], tokenCount, ragged: false };
 }
 
-export function modelClassIdentifiers(config = {}) {
-  return Array.isArray(config.architectures)
-    ? config.architectures.filter((name) => typeof name === 'string' && name.length > 0)
-    : [];
-}
-
 export function makeBuffer({
   id,
   label,
@@ -85,7 +68,6 @@ export function makeBuffer({
   dtype,
   bytesPerElement,
   formula,
-  evidenceIds = [],
 }) {
   if (SEMANTIC_DTYPE_BYTES[dtype] !== bytesPerElement) {
     throw new Error(`Dtype width mismatch for ${id}: ${dtype} is not ${bytesPerElement} bytes`);
@@ -110,40 +92,5 @@ export function makeBuffer({
     bytes,
     gb: bytes / GB,
     formula,
-    evidenceIds,
-  };
-}
-
-export function verifiedResult({ profile, buffers, note = '' }) {
-  const totalBytes = buffers.reduce((sum, buffer) => sum + buffer.bytes, 0);
-  if (!Number.isSafeInteger(totalBytes) || totalBytes < 0) {
-    throw new Error(`Invalid KV total for ${profile.id}`);
-  }
-  return {
-    status: 'verified',
-    kvUnknown: false,
-    vKV: totalBytes / GB,
-    totalBytes,
-    profile,
-    buffers,
-    diagnostic: null,
-    note,
-  };
-}
-
-export function unknownResult({ code, modelClassIds, details = null, status = 'unsupported' }) {
-  return {
-    status,
-    kvUnknown: true,
-    vKV: null,
-    totalBytes: null,
-    profile: null,
-    buffers: [],
-    diagnostic: {
-      code,
-      modelClassIdentifiers: modelClassIds,
-      ...(details ? { details } : {}),
-    },
-    note: '',
   };
 }

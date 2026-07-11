@@ -48,6 +48,7 @@ const STR = {
 
   // Verified KV Cache audit output
   'kv.verified': { zh: '已验证', en: 'Verified' },
+  'kv.warning': { zh: '未验证结果', en: 'Unverified result' },
   'kv.unsupported': { zh: 'KV Cache 无法验证', en: 'KV Cache could not be verified' },
   'kv.totalUnknown': { zh: 'KV Cache 未验证，因此总显存保持未知。', en: 'KV Cache is unverified, so total VRAM remains unknown.' },
   'kv.buffer': { zh: 'Buffer', en: 'Buffer' },
@@ -55,16 +56,18 @@ const STR = {
   'kv.elements': { zh: '元素数', en: 'Elements' },
   'kv.dtype': { zh: 'DType', en: 'DType' },
   'kv.bytes': { zh: '字节 / GB', en: 'Bytes / GB' },
-  'kv.formula': { zh: '公式 / 证据', en: 'Formula / evidence' },
-  'kv.evidence': { zh: '第一方证据与固定 revision', en: 'First-party evidence and fixed revisions' },
-  'kv.mismatches': { zh: '未命中条件：', en: 'Unmatched conditions: ' },
+  'kv.formula': { zh: '公式', en: 'Formula' },
+  'kv.repoId': { zh: '仓库：', en: 'Repository: ' },
+  'kv.currentCommit': { zh: '当前 Commit：', en: 'Current commit: ' },
+  'kv.auditedCommit': { zh: '计算依据的已审核 Commit：', en: 'Calculated from audited commit: ' },
+  'kv.configDifferences': { zh: '配置差异：', en: 'Config differences: ' },
+  'kv.issues': { zh: '无效输入：', en: 'Invalid inputs: ' },
   'kv.diag.unknown': { zh: '未知诊断', en: 'Unknown diagnostic' },
-  'kv.diag.missing_model_class_identifier': { zh: 'config.architectures 缺失或为空', en: 'config.architectures is missing or empty' },
-  'kv.diag.unsupported_model_architecture': { zh: '模型类标识未进入人工审核目录', en: 'Model Class Identifier is not in the reviewed catalog' },
-  'kv.diag.conflicting_architecture_profiles': { zh: '多个模型类标识指向冲突的 Profile', en: 'Model Class Identifiers resolve to conflicting Profiles' },
-  'kv.diag.profile_signature_mismatch': { zh: '配置或张量签名与已审核 Profile 不一致', en: 'Config or tensor signature differs from the reviewed Profile' },
-  'kv.diag.profile_input_out_of_range': { zh: 'batch 或 context 超出 Profile 已验证范围', en: 'Batch or context is outside the Profile\'s verified range' },
+  'kv.diag.unsupported_model_architecture': { zh: '仓库未进入 Architecture Layout Catalog', en: 'Repository is not in the Architecture Layout Catalog' },
+  'kv.diag.profile_input_out_of_range': { zh: 'batch 或 context 超出当前配置范围', en: 'Batch or context is outside the current config range' },
   'kv.diag.profile_calculation_out_of_range': { zh: 'KV 字节计算超出安全整数范围', en: 'KV byte calculation exceeds the safe integer range' },
+  'kv.diag.invalid_model_provenance': { zh: '仓库来源或 Commit ID 无效', en: 'Repository provenance or commit ID is invalid' },
+  'kv.diag.invalid_profile_config': { zh: '当前配置缺少算法输入或输入无效', en: 'Current config is missing required algorithm inputs or contains invalid values' },
 
   // Composition group titles
   'group.weight': { zh: '权重显存（稠密基础）', en: 'Weight VRAM (dense base)' },
@@ -123,6 +126,10 @@ const STR = {
   'err.configFetch': {
     zh: '无法获取 config.json（仓库是否存在或网络异常）：',
     en: 'Failed to fetch config.json (repo may not exist or network error): ',
+  },
+  'err.provenanceFetch': {
+    zh: '无法解析仓库当前 Commit：',
+    en: 'Failed to resolve the repository commit: ',
   },
   'err.badSafetensors': { zh: '文件 {file} 过短，不是合法的 safetensors', en: 'File {file} is too short to be a valid safetensors' },
   // Language toggle

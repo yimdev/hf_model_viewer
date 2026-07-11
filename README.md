@@ -8,9 +8,9 @@
 
 - **Zero-download parsing** — reads only the `safetensors` header JSON via HTTP Range requests, never downloading weight data; parses huge MoE repos in seconds.
 - **Dynamic VRAM estimation** — computes per-tensor weight VRAM from on-disk shapes and dtypes, then adds the Effective KV Cache Payload from a verified Architecture Profile.
-- **Verified KV Cache Profiles** — exact model-class identifiers select manually reviewed candidates, which must validate their complete config and safetensors metadata signatures. Unknown models fail closed; no heuristic fallback.
+- **Repository-routed Architecture Profiles** — a canonical Model Repository Identifier selects one dedicated Architecture Profile. The current commit and every algorithm-dependent config input are compared with the audited baseline; drift produces a warning while valid current inputs drive the calculation.
 - **Initial dedicated layouts** — GLM 5.2 IndexShare, DeepSeek V4 Pro HCA/CSA (including indexer and compressor state), and Hunyuan 3 full-context GQA. Each Profile owns one complete layout.
-- **Auditable breakdown** — exposes Profile/layout versions and every buffer group's layers, element count, dtype, bytes, formula, and fixed-revision evidence.
+- **Auditable breakdown** — exposes repository provenance, Profile Assurance, structured config differences, Architecture Profile/KV Cache Layout versions, and every buffer group's layers, element count, dtype, bytes, and formula.
 - **Fine-grained composition** — overview chart breaks VRAM down by Tensor Name Pattern plus the Effective KV Cache Payload, with on-disk dtypes displayed alongside each entry.
 - **Bilingual UI** — one-click Chinese / English switching, persisted locally.
 
@@ -23,12 +23,14 @@ The estimator counts the effective payload that model semantics require to remai
 ```
 Vtotal   = Vweights + Vkv_cache
 Vweights = Σ params × B_dtype / 1024³
-Vkv      = Σ verified-profile buffer bytes / 1024³
+Vkv      = Σ profile-calculated buffer bytes / 1024³
 ```
 
 The verified semantic payload is `B × S × 95,232 bytes` for GLM 5.2 and `B × S × 327,680 bytes` for Hunyuan 3. DeepSeek V4 Pro separately accounts for HCA/CSA local and compressed KV, indexer KV, and F32 compressor live state; the UI audit view exposes the complete per-buffer formulas.
 
-The public `computeKV(...)` / `estimateVRAM(...)` APIs also accept `sequenceLengths: number[]`. For ragged batches, GLM 5.2 and Hunyuan 3 use `Σ sequenceLengths`; DeepSeek V4 Pro evaluates window and compression boundaries independently for every sequence before summing each buffer.
+The public `computeKV(...)` interface requires `source: { repoId, commitId }`, current config, and workload. The `estimateVRAM(...)` interface requires the same provenance plus tensor metadata. Both accept `sequenceLengths: number[]`; for ragged batches, GLM 5.2 and Hunyuan 3 use `Σ sequenceLengths`, while DeepSeek V4 Pro evaluates window and compression transitions independently for every sequence before summing each buffer.
+
+Profile Assurance is independent of estimate completeness. An audited commit with an exact algorithm-input baseline is `verified`. A valid newer config still produces a Complete VRAM Estimate from its current values, but the result is marked `warning` and reports the current commit, audited commit, and structured config differences.
 
 ### Local development
 

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { buildTensorNameTree, groupRepeatedTensorSubtrees } from '../../src/tree/index.js';
+import { createTensorMetadataIndex } from '../../src/tree/index.js';
 import { renderTree } from '../../src/ui/treeView.js';
 
 function renderTensorNames(names) {
@@ -10,13 +10,13 @@ function renderTensorNames(names) {
     shape: [8, 8],
     dtype: 'BF16',
   }));
-  const tree = groupRepeatedTensorSubtrees(buildTensorNameTree(tensors));
+  const tree = createTensorMetadataIndex(tensors).tensorNameTree;
   const container = {
     innerHTML: '',
     querySelectorAll: () => [],
   };
 
-  renderTree(container, tree, new Map());
+  renderTree(container, tree);
   return container.innerHTML;
 }
 

@@ -8,7 +8,7 @@ async function rawFetch(url, { headers = {}, method = 'GET', range } = {}) {
   return { ok: res.ok, status: res.status, body: Array.from(new Uint8Array(buf)) };
 }
 
-export function makeNet() {
+export function makeFetchTransport() {
   return {
     async text(url, headers = {}) {
       const r = await rawFetch(url, { headers });

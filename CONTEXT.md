@@ -8,13 +8,17 @@ This context defines the domain language for model-inference VRAM estimation, wi
 A model class name declared in `config.architectures[]` as capable of loading a set of pretrained weights; it is not a complete identity for a KV Cache Layout.
 _Avoid_: Architect, layout identifier
 
+**Model Repository Identifier**:
+The canonical Hugging Face `repoId` resolved by ingestion; it selects one Architecture Profile in the Architecture Layout Catalog, independently of the Model Class Identifier.
+_Avoid_: User-entered alias, Model Class Identifier
+
 **Model Architecture**:
 A model-level architecture category that determines complete KV Cache storage semantics; it is not synonymous with an individual attention mechanism such as MHA, GQA, or MLA.
 _Avoid_: Model Class Identifier, attention architecture
 
 **Architecture Profile**:
-A specifically identified and manually reviewed model-architecture variant; each Profile maps uniquely to one dedicated complete KV Cache Layout, while aliases that differ only by class name may share a Profile.
-_Avoid_: Generic architecture guess, layout template
+A standardized definition of one dedicated complete KV Cache Layout algorithm, its Model Repository Identifiers, and one audited commit plus audited values for every config input the algorithm consumes; calculation uses the current revision's valid config inputs even when they differ from the audited baseline.
+_Avoid_: Generic architecture guess, layout template, checkpoint-wide tensor signature
 
 **KV Cache Layout**:
 The complete set of cache structures that a Model Architecture requires to remain GPU-resident during inference; a hybrid-mechanism model owns one dedicated complete Layout rather than a composition of existing Layouts.
@@ -25,23 +29,27 @@ A precisely defined resident cache structure within a complete Layout; it may re
 _Avoid_: Generic layout, shared formula as proof of correctness
 
 **Verified Layout**:
-A dedicated Layout backed by a first-party implementation, an independent VRAM derivation, Profile-level end-to-end golden tests, and, for complex cases, cross-checks against official cache Shapes or measured VRAM; a Layout that does not meet this evidence threshold is not supported.
-_Avoid_: Speculative support, primitive-only test coverage
+A dedicated Layout whose current Model Repository Identifier, immutable commit, and every algorithm-dependent config input equal the Architecture Profile's audited baseline; other valid revisions may still produce a warning calculation but are not Verified.
+_Avoid_: Treating a warning calculation as Verified, primitive-only test coverage
+
+**Profile Assurance**:
+The verification state of an Architecture Profile calculation; it is `verified` only when the current immutable commit and every algorithm-dependent config input match the audited baseline, otherwise it is `warning` with structured commit and config differences.
+_Avoid_: Calculation availability, Complete VRAM Estimate completeness
 
 **Effective KV Cache Payload**:
 All KV Cache data that model semantics require to remain GPU-resident for a specified batch and context, including model-defined compression, windows, indexers, and cache DType but excluding framework capacity reservations, allocator fragmentation, and offload policy.
 _Avoid_: Framework allocation, CUDA reserved memory
 
 **Complete VRAM Estimate**:
-A total VRAM result available only when weights and an Effective KV Cache Payload are both known; if either required component is unknown, the total must remain unknown.
+A total VRAM result available only when weights and an Effective KV Cache Payload are both known; if either required component is unknown, the total must remain unknown, while Profile Assurance independently communicates whether a known result is Verified or warning-only.
 _Avoid_: Treating unknown KV as zero, partial total VRAM
 
 **Architecture Layout Catalog**:
-An explicit, manually reviewed or specifically verified catalog that maps a Model Class Identifier, through model-specific identification, to one Architecture Profile and its unique KV Cache Layout; entries must not be inferred from naming patterns or generic heuristics.
-_Avoid_: Automatic architecture guessing, rule-based routing
+An explicit catalog that maps each canonical Model Repository Identifier to exactly one Architecture Profile and its unique KV Cache Layout; duplicate repository registrations and invalid Profile definitions fail during catalog initialization.
+_Avoid_: Model Class Identifier routing, automatic architecture guessing, rule-based routing
 
 **Unsupported Model Architecture**:
-A Model Architecture that is not explicitly included in the Architecture Layout Catalog; its KV Cache VRAM usage is unknown and must not be estimated through a generic formula or heuristic fallback.
+A Model Architecture whose canonical Model Repository Identifier is not explicitly included in the Architecture Layout Catalog; its KV Cache VRAM usage is unknown and must not be estimated through a generic formula or heuristic fallback.
 _Avoid_: Guessed result, default MHA
 
 **Tensor Name Tree**:
@@ -59,3 +67,7 @@ _Avoid_: Architecture-based grouping, representative-only VRAM, shape-only group
 **Tensor Name Pattern**:
 A presentation-only aggregation identity for tensors whose dot-delimited names differ only in standalone non-negative integer segments, represented by `*`; unlike a Repeated Tensor Group, it does not require matching terminal Shapes or DTypes.
 _Avoid_: Repeated Tensor Group, Tensor category, architecture grouping
+
+**Tensor Metadata Index**:
+A lossless derived index of parsed tensor metadata that provides authoritative parameter counts, DTypes, weight bytes, Tensor Name Patterns, and subtree totals; it may produce a Tensor Name Tree and Repeated Tensor Groups as presentation projections without assigning model-architecture semantics.
+_Avoid_: Model architecture inference, presentation tree as accounting authority

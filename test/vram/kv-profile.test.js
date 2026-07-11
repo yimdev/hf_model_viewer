@@ -1,66 +1,67 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { computeKV, resolveProfileCandidate } from '../../src/vram/kv/index.js';
+import { computeKV } from '../../src/vram/kv/index.js';
 import { makeBuffer } from '../../src/vram/kv/profile-primitives.js';
 import { deepseekV4ProFixture, glm52Fixture, hy3Fixture } from './profile-fixtures.js';
 
-test('unsupported Model Class Identifier fails closed without a heuristic estimate', () => {
-  const result = computeKV({
-    config: {
-      architectures: ['UnknownForCausalLM'],
-      num_hidden_layers: 2,
-      num_attention_heads: 4,
-      num_key_value_heads: 2,
-      hidden_size: 16,
-    },
-    tensors: [
-      { name: 'model.layers.0.self_attn.k_proj.weight', shape: [8, 16], dtype: 'BF16' },
-      { name: 'model.layers.0.self_attn.v_proj.weight', shape: [8, 16], dtype: 'BF16' },
-      { name: 'model.layers.1.self_attn.k_proj.weight', shape: [8, 16], dtype: 'BF16' },
-      { name: 'model.layers.1.self_attn.v_proj.weight', shape: [8, 16], dtype: 'BF16' },
-    ],
-    batch: 1,
-    seq: 1024,
-  });
-
-  assert.equal(result.status, 'unsupported');
-  assert.equal(result.kvUnknown, true);
-  assert.equal(result.vKV, null);
-  assert.equal(result.profile, null);
-  assert.deepEqual(result.buffers, []);
-  assert.deepEqual(result.diagnostic, {
-    code: 'unsupported_model_architecture',
-    modelClassIdentifiers: ['UnknownForCausalLM'],
-  });
+const SOURCES = Object.freeze({
+  glm52: {
+    repoId: 'zai-org/GLM-5.2',
+    commitId: 'b4734de4facf877f85769a911abafc5283eab3d9',
+  },
+  glm52Fp8: {
+    repoId: 'zai-org/GLM-5.2-FP8',
+    commitId: 'ba978f7d347eaf65d22f1a86833408afdb953541',
+  },
+  deepseek: {
+    repoId: 'deepseek-ai/DeepSeek-V4-Pro',
+    commitId: 'b5968e9190ef611bbf34a7229255be88a0e937c1',
+  },
+  hy3: {
+    repoId: 'tencent/Hy3',
+    commitId: '716aa7241bd6d95896be4ebfc761162a9c4d49ef',
+  },
+  hy3Preview: {
+    repoId: 'tencent/Hy3-preview',
+    commitId: 'b53bd705bef15f0a9e52eade60a4353eaaa6c6b8',
+  },
 });
 
-test('missing Model Class Identifier fails closed instead of using config fallback', () => {
+function calculate(source, fixture, workload = {}) {
+  return computeKV({ source, config: fixture.config, ...workload });
+}
+
+test('unsupported Model Repository Identifier fails closed', () => {
   const result = computeKV({
-    config: {
-      num_hidden_layers: 2,
-      num_attention_heads: 4,
-      num_key_value_heads: 2,
-      hidden_size: 16,
+    source: {
+      repoId: 'unknown/model',
+      commitId: '1111111111111111111111111111111111111111',
     },
-    batch: 1,
-    seq: 1024,
+    config: {},
   });
 
-  assert.equal(result.status, 'unsupported');
-  assert.equal(result.vKV, null);
-  assert.deepEqual(result.diagnostic, {
-    code: 'missing_model_class_identifier',
-    modelClassIdentifiers: [],
-  });
+  assert.equal(result.calculation.status, 'unknown');
+  assert.equal(result.calculation.diagnostic.code, 'unsupported_model_architecture');
+  assert.equal(result.totalBytes, null);
+  assert.equal(result.assurance, null);
 });
 
-test('GLM 5.2 returns its verified IndexShare buffer breakdown', () => {
-  const fixture = glm52Fixture();
-  const result = computeKV({ ...fixture, batch: 1, seq: 1 });
+test('supported repository requires an immutable commit ID', () => {
+  const result = computeKV({
+    source: { repoId: SOURCES.hy3.repoId, commitId: 'main' },
+    config: hy3Fixture().config,
+  });
 
-  assert.equal(result.status, 'verified');
-  assert.equal(result.kvUnknown, false);
+  assert.equal(result.calculation.status, 'unknown');
+  assert.equal(result.calculation.diagnostic.code, 'invalid_model_provenance');
+});
+
+test('GLM 5.2 returns its IndexShare buffer breakdown', () => {
+  const result = calculate(SOURCES.glm52, glm52Fixture(), { batch: 1, seq: 1 });
+
+  assert.equal(result.calculation.status, 'computed');
+  assert.equal(result.assurance.status, 'verified');
   assert.equal(result.profile.id, 'glm-5.2-semantic-bf16-v1');
   assert.equal(result.profile.layout.id, 'glm-5.2-indexshare-bf16-v1');
   assert.equal(result.totalBytes, 95_232);
@@ -74,30 +75,19 @@ test('GLM 5.2 returns its verified IndexShare buffer breakdown', () => {
   );
 });
 
-test('GLM 5.2 accepts only the explicitly audited FP8 checkpoint signature alias', () => {
-  const fixture = glm52Fixture({ fp8: true });
-  const result = computeKV({ ...fixture, batch: 1, seq: 1 });
+test('GLM 5.2 FP8 repository alias uses the same KV Cache Layout', () => {
+  const result = calculate(SOURCES.glm52Fp8, glm52Fixture({ fp8: true }), { batch: 1, seq: 1 });
 
-  assert.equal(result.status, 'verified');
-  assert.equal(result.profile.id, 'glm-5.2-semantic-bf16-v1');
+  assert.equal(result.calculation.status, 'computed');
+  assert.equal(result.assurance.status, 'verified');
   assert.equal(result.totalBytes, 95_232);
-
-  fixture.tensors = fixture.tensors.filter(
-    (tensor) => tensor.name !== 'model.layers.34.self_attn.kv_b_proj.weight_scale_inv',
-  );
-  const mismatch = computeKV({ ...fixture, batch: 1, seq: 1 });
-  assert.equal(mismatch.status, 'unsupported');
-  assert.equal(mismatch.vKV, null);
-  assert.ok(mismatch.diagnostic.details.mismatches.includes('tensor.layers.34.kv_b_scale'));
 });
 
-test('DeepSeek V4 Pro returns its verified HCA and CSA stateful buffer breakdown', () => {
-  const fixture = deepseekV4ProFixture();
-  const result = computeKV({ ...fixture, batch: 1, seq: 128 });
+test('DeepSeek V4 Pro returns its HCA and CSA stateful buffer breakdown', () => {
+  const result = calculate(SOURCES.deepseek, deepseekV4ProFixture(), { batch: 1, seq: 128 });
 
-  assert.equal(result.status, 'verified');
-  assert.equal(result.profile.id, 'deepseek-v4-pro-instruct-b5968e9');
-  assert.equal(result.profile.layout.id, 'deepseek-v4-pro-csa-hca-bf16-v1');
+  assert.equal(result.calculation.status, 'computed');
+  assert.equal(result.assurance.status, 'verified');
   assert.equal(result.totalBytes, 10_484_736);
   assert.deepEqual(
     result.buffers.map(({ id, bytes, dtype }) => ({ id, bytes, dtype })),
@@ -115,13 +105,11 @@ test('DeepSeek V4 Pro returns its verified HCA and CSA stateful buffer breakdown
   );
 });
 
-test('Hunyuan 3 returns its verified full-context GQA buffer breakdown', () => {
-  const fixture = hy3Fixture();
-  const result = computeKV({ ...fixture, batch: 1, seq: 1 });
+test('Hunyuan 3 returns its full-context GQA buffer breakdown', () => {
+  const result = calculate(SOURCES.hy3, hy3Fixture(), { batch: 1, seq: 1 });
 
-  assert.equal(result.status, 'verified');
-  assert.equal(result.profile.id, 'hy3-instruct-semantic-bf16-v1');
-  assert.equal(result.profile.layout.id, 'hy3-full-gqa-bf16-v1');
+  assert.equal(result.calculation.status, 'computed');
+  assert.equal(result.assurance.status, 'verified');
   assert.equal(result.totalBytes, 327_680);
   assert.deepEqual(
     result.buffers.map(({ id, bytes, dtype }) => ({ id, bytes, dtype })),
@@ -132,22 +120,27 @@ test('Hunyuan 3 returns its verified full-context GQA buffer breakdown', () => {
   );
 });
 
-test('GLM 5.2 keeps full history across the index_topk boundary', () => {
-  const fixture = glm52Fixture();
-  const atTopK = computeKV({ ...fixture, batch: 1, seq: 2048 });
-  const afterTopK = computeKV({ ...fixture, batch: 1, seq: 2049 });
-  const atMax = computeKV({ ...fixture, batch: 1, seq: 1048576 });
-  const beyondMax = computeKV({ ...fixture, batch: 1, seq: 1048577 });
+test('Hunyuan 3 preview repository alias is independently audited', () => {
+  const result = calculate(SOURCES.hy3Preview, hy3Fixture(), { batch: 1, seq: 1 });
 
-  assert.equal(atTopK.totalBytes, 195_035_136);
-  assert.equal(afterTopK.totalBytes, 195_130_368);
-  assert.equal(afterTopK.totalBytes - atTopK.totalBytes, 95_232);
-  assert.equal(atMax.totalBytes, 99_857_989_632);
-  assert.equal(beyondMax.status, 'unsupported');
-  assert.equal(beyondMax.diagnostic.code, 'profile_input_out_of_range');
+  assert.equal(result.assurance.status, 'verified');
+  assert.equal(result.provenance.auditedCommitId, SOURCES.hy3Preview.commitId);
+  assert.equal(result.totalBytes, 327_680);
 });
 
-test('DeepSeek V4 Pro compressor state transitions match verified boundaries', () => {
+test('current config max context controls workload validation', () => {
+  const fixture = glm52Fixture();
+  fixture.config.max_position_embeddings = 4096;
+  const atMax = calculate(SOURCES.glm52, fixture, { batch: 1, seq: 4096 });
+  const beyondMax = calculate(SOURCES.glm52, fixture, { batch: 1, seq: 4097 });
+
+  assert.equal(atMax.calculation.status, 'computed');
+  assert.equal(atMax.assurance.status, 'warning');
+  assert.equal(beyondMax.calculation.status, 'unknown');
+  assert.equal(beyondMax.calculation.diagnostic.code, 'profile_input_out_of_range');
+});
+
+test('DeepSeek V4 Pro compressor state transitions preserve golden totals', () => {
   const fixture = deepseekV4ProFixture();
   const vectors = new Map([
     [3, 1_489_920],
@@ -161,200 +154,50 @@ test('DeepSeek V4 Pro compressor state transitions match verified boundaries', (
   ]);
 
   for (const [seq, expectedBytes] of vectors) {
-    assert.equal(computeKV({ ...fixture, batch: 1, seq }).totalBytes, expectedBytes, `S=${seq}`);
+    assert.equal(calculate(SOURCES.deepseek, fixture, { batch: 1, seq }).totalBytes, expectedBytes);
   }
 });
 
-test('DeepSeek V4 Pro fails closed when its audited FP4 checkpoint identity drifts', () => {
-  const fixture = deepseekV4ProFixture();
-  fixture.tensors = fixture.tensors.filter(
-    (tensor) => tensor.name !== 'layers.0.ffn.experts.0.w1.scale',
-  );
-
-  const result = computeKV({ ...fixture, batch: 1, seq: 128 });
-
-  assert.equal(result.status, 'unsupported');
-  assert.equal(result.vKV, null);
-  assert.equal(result.diagnostic.code, 'profile_signature_mismatch');
-  assert.ok(result.diagnostic.details.mismatches.includes('tensor.fp4_expert_scale_identity'));
-});
-
-test('Hunyuan 3 full-context GQA reaches 80 GiB at its verified maximum', () => {
-  const fixture = hy3Fixture();
-  const at4K = computeKV({ ...fixture, batch: 1, seq: 4096 });
-  const atMax = computeKV({ ...fixture, batch: 1, seq: 262144 });
-  const beyondMax = computeKV({ ...fixture, batch: 1, seq: 262145 });
-
-  assert.equal(at4K.totalBytes, 1_342_177_280);
-  assert.equal(atMax.totalBytes, 85_899_345_920);
-  assert.equal(beyondMax.diagnostic.code, 'profile_input_out_of_range');
-});
-
-test('Hunyuan 3 fails closed when an audited config predicate drifts', () => {
-  const fixture = hy3Fixture();
-  fixture.config.router_scaling_factor = 3;
-
-  const result = computeKV({ ...fixture, batch: 1, seq: 1 });
-
-  assert.equal(result.status, 'unsupported');
-  assert.equal(result.vKV, null);
-  assert.equal(result.diagnostic.code, 'profile_signature_mismatch');
-  assert.ok(result.diagnostic.details.mismatches.includes('config.router_scaling_factor'));
-});
-
-test('Hunyuan 3 fails closed when a cache-related tensor signature drifts', () => {
-  const fixture = hy3Fixture();
-  fixture.tensors = fixture.tensors.filter(
-    (tensor) => tensor.name !== 'model.layers.37.self_attn.o_proj.weight',
-  );
-
-  const result = computeKV({ ...fixture, batch: 1, seq: 1 });
-
-  assert.equal(result.status, 'unsupported');
-  assert.equal(result.vKV, null);
-  assert.equal(result.diagnostic.code, 'profile_signature_mismatch');
-  assert.ok(result.diagnostic.details.mismatches.includes('tensor.layers.37.o_proj'));
-});
-
-test('shared buffer arithmetic fails closed instead of returning an unsafe integer', () => {
-  const fixture = hy3Fixture();
-
-  const result = computeKV({ ...fixture, batch: Number.MAX_SAFE_INTEGER, seq: 262144 });
-
-  assert.equal(result.status, 'unsupported');
-  assert.equal(result.vKV, null);
-  assert.equal(result.diagnostic.code, 'profile_calculation_out_of_range');
-});
-
-test('verified profiles reject unreviewed extra backbone layers', () => {
-  const cases = [
-    {
-      fixture: glm52Fixture(),
-      tensor: {
-        name: 'model.layers.79.self_attn.kv_a_proj_with_mqa.weight',
-        shape: [576, 6144], dtype: 'BF16',
-      },
-      mismatch: 'tensor.unexpected_layer_79',
-    },
-    {
-      fixture: deepseekV4ProFixture(),
-      tensor: { name: 'layers.61.attn.wkv.weight', shape: [512, 7168], dtype: 'F8_E4M3' },
-      mismatch: 'tensor.unexpected_layer_61',
-    },
-    {
-      fixture: hy3Fixture(),
-      tensor: {
-        name: 'model.layers.82.self_attn.k_proj.weight',
-        shape: [1024, 4096], dtype: 'BF16',
-      },
-      mismatch: 'tensor.unexpected_layer_82',
-    },
-  ];
-
-  for (const { fixture, tensor, mismatch } of cases) {
-    fixture.tensors.push(tensor);
-    const result = computeKV({ ...fixture, batch: 1, seq: 1 });
-    assert.equal(result.status, 'unsupported', tensor.name);
-    assert.ok(result.diagnostic.details.mismatches.includes(mismatch), tensor.name);
-  }
-});
-
-test('verified profiles reject unreviewed KV cache dtype overrides', () => {
-  for (const fixture of [glm52Fixture(), deepseekV4ProFixture(), hy3Fixture()]) {
-    fixture.config.kv_cache_dtype = 'fp8';
-    const result = computeKV({ ...fixture, batch: 1, seq: 128 });
-    assert.equal(result.status, 'unsupported', fixture.config.architectures[0]);
-    assert.ok(
-      result.diagnostic.details.mismatches.includes('config.kv_cache_dtype'),
-      fixture.config.architectures[0],
-    );
-  }
-});
-
-test('candidate resolution validates every same-class Profile before reporting conflict', () => {
-  const rejected = {
-    id: 'rejected',
-    match: () => ({ matched: false, mismatches: ['config.variant'] }),
-  };
-  const accepted = {
-    id: 'accepted',
-    match: () => ({ matched: true, mismatches: [] }),
-  };
-
-  const selected = resolveProfileCandidate([rejected, accepted], { config: {}, tensors: [] });
-  assert.equal(selected.status, 'matched');
-  assert.equal(selected.profile, accepted);
-
-  const conflict = resolveProfileCandidate([accepted, { ...accepted, id: 'also-accepted' }], {
-    config: {}, tensors: [],
-  });
-  assert.equal(conflict.status, 'conflict');
-  assert.deepEqual(conflict.profileIds, ['accepted', 'also-accepted']);
-});
-
-test('different known Model Class Identifiers still report an explicit Profile conflict', () => {
-  const result = computeKV({
-    config: { architectures: ['GlmMoeDsaForCausalLM', 'HYV3ForCausalLM'] },
-    tensors: [],
-  });
-
-  assert.equal(result.status, 'conflict');
-  assert.equal(result.diagnostic.code, 'conflicting_architecture_profiles');
-  assert.deepEqual(result.diagnostic.details.profileIds, [
-    'glm-5.2-semantic-bf16-v1',
-    'hy3-instruct-semantic-bf16-v1',
-  ]);
-});
-
-test('linear full-context Profiles use the sum of ragged sequence lengths', () => {
-  const glm = computeKV({ ...glm52Fixture(), sequenceLengths: [1, 2048, 2049] });
-  const hy3 = computeKV({ ...hy3Fixture(), sequenceLengths: [1, 4096, 8192] });
-
-  assert.equal(glm.totalBytes, (1 + 2048 + 2049) * 95_232);
-  assert.equal(hy3.totalBytes, 4_026_859_520);
-});
-
-test('DeepSeek V4 Pro evaluates ragged compression boundaries per sequence', () => {
-  const fixture = deepseekV4ProFixture();
+test('ragged workloads use current Layout semantics', () => {
+  const glm = calculate(SOURCES.glm52, glm52Fixture(), { sequenceLengths: [1, 2048, 2049] });
+  const hy3 = calculate(SOURCES.hy3, hy3Fixture(), { sequenceLengths: [1, 4096, 8192] });
+  const deepseekFixture = deepseekV4ProFixture();
   const lengths = [3, 4, 7, 128, 129];
-  const ragged = computeKV({ ...fixture, sequenceLengths: lengths });
+  const deepseek = calculate(SOURCES.deepseek, deepseekFixture, { sequenceLengths: lengths });
   const independentlySummed = lengths.reduce(
-    (sum, seq) => sum + computeKV({ ...fixture, batch: 1, seq }).totalBytes,
+    (sum, seq) => sum + calculate(SOURCES.deepseek, deepseekFixture, { batch: 1, seq }).totalBytes,
     0,
   );
 
-  assert.equal(ragged.status, 'verified');
-  assert.equal(ragged.totalBytes, independentlySummed);
+  assert.equal(glm.totalBytes, (1 + 2048 + 2049) * 95_232);
+  assert.equal(hy3.totalBytes, 4_026_859_520);
+  assert.equal(deepseek.totalBytes, independentlySummed);
 });
 
-test('DeepSeek V4 Pro rejects a zero-sized scalar batch', () => {
-  const result = computeKV({ ...deepseekV4ProFixture(), batch: 0, seq: 128 });
-
-  assert.equal(result.status, 'unsupported');
-  assert.equal(result.vKV, null);
-  assert.equal(result.diagnostic.code, 'profile_input_out_of_range');
-});
-
-test('GLM 5.2 and Hy3 preserve their verified zero-workload semantics', () => {
-  for (const fixture of [glm52Fixture(), hy3Fixture()]) {
-    const zeroBatch = computeKV({ ...fixture, batch: 0, seq: 128 });
-    const emptyRagged = computeKV({ ...fixture, sequenceLengths: [] });
-
-    assert.equal(zeroBatch.status, 'verified', fixture.config.architectures[0]);
-    assert.equal(zeroBatch.totalBytes, 0, fixture.config.architectures[0]);
-    assert.equal(emptyRagged.status, 'verified', fixture.config.architectures[0]);
-    assert.equal(emptyRagged.totalBytes, 0, fixture.config.architectures[0]);
+test('Profile workload semantics preserve zero-workload differences', () => {
+  for (const [source, fixture] of [
+    [SOURCES.glm52, glm52Fixture()],
+    [SOURCES.hy3, hy3Fixture()],
+  ]) {
+    assert.equal(calculate(source, fixture, { batch: 0, seq: 128 }).totalBytes, 0);
+    assert.equal(calculate(source, fixture, { sequenceLengths: [] }).totalBytes, 0);
   }
+  const deepseek = calculate(SOURCES.deepseek, deepseekV4ProFixture(), { batch: 0, seq: 128 });
+  assert.equal(deepseek.calculation.status, 'unknown');
+  assert.equal(deepseek.calculation.diagnostic.code, 'profile_input_out_of_range');
 });
 
-test('DeepSeek V4 Pro rejects an empty ragged batch', () => {
-  const result = computeKV({ ...deepseekV4ProFixture(), sequenceLengths: [] });
+test('safe-integer validation keeps impossible calculations unknown', () => {
+  const result = calculate(SOURCES.hy3, hy3Fixture(), {
+    batch: Number.MAX_SAFE_INTEGER,
+    seq: 262144,
+  });
 
-  assert.equal(result.status, 'unsupported');
-  assert.equal(result.diagnostic.code, 'profile_input_out_of_range');
+  assert.equal(result.calculation.status, 'unknown');
+  assert.equal(result.calculation.diagnostic.code, 'profile_calculation_out_of_range');
 });
 
-test('shared buffer validation rejects a dtype and byte-width mismatch', () => {
+test('buffer validation rejects a DType and byte-width mismatch', () => {
   assert.throws(
     () => makeBuffer({
       id: 'bad-bf16', label: 'bad', layerGroup: {}, elements: 1,
