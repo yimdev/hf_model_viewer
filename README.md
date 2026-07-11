@@ -4,6 +4,38 @@ English documentation
 
 > Parse any Hugging Face model topology without downloading weights, then estimate GPU VRAM from verified Architecture Profiles or an explicitly approximate generic KV Cache fallback. Initial profiles cover GLM 5.2, DeepSeek V4 Pro, Hunyuan 3, and Qwen 3.6 35B A3B.
 
+## Contributing KV Cache Profiles with the skill
+
+The repository ships [`add-kv-cache-profile`](skills/add-kv-cache-profile/SKILL.md), an agent skill that turns a model request into an auditable contribution. It pins upstream revisions, traces every persistent decode state, derives independent golden vectors, implements the Architecture Profile, and runs the required assurance and workload tests.
+
+Fork and clone the repository, install its JavaScript dependencies, then make the skill discoverable to Codex by linking it into your personal skills directory:
+
+```bash
+git clone https://github.com/<your-account>/hf_model_viewer.git
+cd hf_model_viewer
+npm install
+
+SKILLS_HOME="${CODEX_HOME:-$HOME/.codex}/skills"
+mkdir -p "$SKILLS_HOME"
+ln -s "$(pwd)/skills/add-kv-cache-profile" "$SKILLS_HOME/add-kv-cache-profile"
+```
+
+Start a Codex task from the repository root with a canonical Hugging Face repository and, when known, the revision to audit:
+
+```text
+Use $add-kv-cache-profile to add a dedicated Architecture Profile for
+<organization>/<model> at revision <branch, tag, or commit>.
+```
+
+Agents that do not discover Codex skills can be given the file directly:
+
+```text
+Follow skills/add-kv-cache-profile/SKILL.md to investigate, implement, and
+validate a KV Cache Profile for <organization>/<model>.
+```
+
+Before opening a pull request, review the generated evidence ledger and confirm that every persistent GPU-resident decode state is either represented by a buffer or explicitly excluded. The contribution must include immutable upstream evidence, independent golden vectors, config and commit drift coverage, model-specific workload boundaries, and successful `npm test` and `npm run build` results. If the available evidence cannot establish a complete KV Cache Layout, open an [issue](https://github.com/4mengy/hf_model_viewer/issues) with the research gaps instead of presenting the generic estimate as verified.
+
 ### Features
 
 - **Zero-download parsing** — reads only the `safetensors` header JSON via HTTP Range requests, never downloading weight data; parses huge MoE repos in seconds.

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Add KV Cache Profile"
+  short_description: "Research and verify a model KV Cache Profile"
+  default_prompt: "Use $add-kv-cache-profile to add a verified KV Cache Profile for a Hugging Face model."
