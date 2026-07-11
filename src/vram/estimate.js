@@ -52,6 +52,7 @@ export function estimateVRAM({
     assurance: result.assurance,
     provenance: result.provenance,
     profile: result.profile,
+    approximation: result.approximation || null,
     buffers: result.buffers,
     note: result.note,
     totalParams: tensorIndex.summary.totalParams,

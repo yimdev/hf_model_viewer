@@ -1,6 +1,8 @@
 /* Shared representation and validation primitives; no model layout formulas live here. */
 const GB = 1024 ** 3;
-const SEMANTIC_DTYPE_BYTES = Object.freeze({ BF16: 2, F32: 4 });
+const SEMANTIC_DTYPE_BYTES = Object.freeze({
+  F8: 1, INT8: 1, F16: 2, BF16: 2, F32: 4, F64: 8,
+});
 
 export function validateSequenceWorkload({
   batch,

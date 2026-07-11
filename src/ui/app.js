@@ -109,11 +109,12 @@ export function mountApp(rootEl) {
     const summaryEl = $('summary');
     summaryEl.style.display = '';
     const profile = est.profile;
+    const approximation = est.approximation;
     const maxCtx = state.maxContextLength;
     const maxCtxStr = maxCtx ? `${fmtNum(maxCtx)} tokens` : '—';
     summaryEl.innerHTML = `
       <div class="hw-note" style="font-size:13px">${esc(t('sum.total'))}<b>${fmtGB(est.vTotal)}</b> ｜ ${esc(t('sum.weights'))} ${fmtGB(est.vWeights)} ｜ KV ${est.complete ? fmtGB(est.vKV) : '—'} ｜ ${esc(t('sum.maxContext'))}${maxCtxStr}</div>
-      ${profile ? `<div class="hw-note">${esc(t('sum.kvProfile'))}<span class="tag profile">${esc(profile.label)}</span> ｜ ${esc(t('sum.kvLayout'))}${esc(profile.layout.id)}@${esc(profile.layout.version)}</div>` : `<div class="hw-note incomplete">${esc(t('kv.totalUnknown'))}</div>`}
+      ${profile ? `<div class="hw-note">${esc(t('sum.kvProfile'))}<span class="tag profile">${esc(profile.label)}</span> ｜ ${esc(t('sum.kvLayout'))}${esc(profile.layout.id)}@${esc(profile.layout.version)}</div>` : approximation && est.complete ? `<div class="hw-note dsa-note">${esc(t('sum.genericKV'))}<span class="tag approximate">${esc(approximation.label)}</span></div>` : `<div class="hw-note incomplete">${esc(t('kv.totalUnknown'))}</div>`}
       ${est.note ? `<div class="hw-note dsa-note">${esc(est.note)}</div>` : ''}
     `;
   }

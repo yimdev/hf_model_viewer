@@ -12,7 +12,7 @@ test('application session owns loading, derivation, workload, and ready state', 
       commitId: '1111111111111111111111111111111111111111',
       config: {
         architectures: ['UnknownForCausalLM'],
-        max_position_embeddings: 4096,
+        text_config: { max_position_embeddings: 4096 },
       },
       tensors: [
         { name: 'model.layers.0.weight', shape: [2, 3], dtype: 'BF16' },

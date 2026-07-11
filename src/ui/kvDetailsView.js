@@ -26,6 +26,13 @@ function serialized(value) {
   return json === undefined ? String(value) : json;
 }
 
+function assumptionLabel(assumption) {
+  const key = `kv.assumption.${assumption.code}`;
+  const translated = t(key);
+  const label = translated === key ? assumption.code : translated;
+  return assumption.assumedDtype ? `${label} (${assumption.assumedDtype})` : label;
+}
+
 export function renderKVDetails(container, estimate) {
   const provenance = estimate.provenance || {};
   const provenanceHtml = `
@@ -34,7 +41,7 @@ export function renderKVDetails(container, estimate) {
       ｜ ${esc(t('kv.currentCommit'))}<code>${esc(provenance.commitId || '—')}</code>
     </div>`;
 
-  if (estimate.calculation.status !== 'computed' || !estimate.profile) {
+  if (estimate.calculation.status !== 'computed') {
     const diagnostic = estimate.calculation.diagnostic;
     const issues = diagnostic?.details?.issues || [];
     const shownIssues = issues.slice(0, MAX_SHOWN_DIFFERENCES);
@@ -57,12 +64,13 @@ export function renderKVDetails(container, estimate) {
       <td class="num">${esc(fmtNum(buffer.bytes))} B<br><span>${esc(fmtGB(buffer.gb))}</span></td>
       <td><code>${esc(buffer.formula)}</code></td>
     </tr>`).join('');
-  const configWarning = estimate.assurance.warnings.find(
+  const warnings = estimate.assurance?.warnings || [];
+  const configWarning = warnings.find(
     (warning) => warning.code === 'config_mismatch',
   );
   const differences = configWarning?.differences || [];
   const shownDifferences = differences.slice(0, MAX_SHOWN_DIFFERENCES);
-  const warningHtml = estimate.assurance.status === 'warning' ? `
+  const profileWarningHtml = estimate.assurance.status === 'warning' ? `
     <div class="kv-unknown">
       <b>${esc(t('kv.warning'))}</b>
       <div>${esc(t('kv.auditedCommit'))}<code>${esc(provenance.auditedCommitId || '—')}</code></div>
@@ -71,14 +79,25 @@ export function renderKVDetails(container, estimate) {
     </div>` : '';
 
   const profile = estimate.profile;
+  const approximation = estimate.approximation;
+  const identity = profile || approximation;
+  const assumptions = approximation?.assumptions || [];
+  const approximationWarningHtml = approximation ? `
+    <div class="kv-approximate">
+      <b>${esc(t('kv.genericWarning'))}</b>
+      ${assumptions.length ? `<div>${esc(t('kv.assumptions'))}${assumptions.map((assumption) => `<div>• ${esc(assumptionLabel(assumption))}</div>`).join('')}</div>` : ''}
+    </div>` : '';
+  const status = estimate.assurance?.status || 'approximate';
+  const statusClass = status === 'verified' ? 'verified' : status === 'approximate' ? 'approximate' : 'profile';
   container.innerHTML = `
     ${provenanceHtml}
     <div class="kv-profile-head">
-      <div><b>${esc(profile.label)}</b><code>${esc(profile.id)}@${esc(profile.version)}</code></div>
-      <span class="tag ${estimate.assurance.status === 'verified' ? 'verified' : 'profile'}">${esc(t(`kv.${estimate.assurance.status}`))}</span>
+      <div><b>${esc(identity.label)}</b><code>${esc(identity.id)}@${esc(identity.version)}</code></div>
+      <span class="tag ${statusClass}">${esc(t(`kv.${status}`))}</span>
     </div>
-    ${warningHtml}
-    <div class="kv-layout-id">${esc(t('sum.kvLayout'))}<code>${esc(profile.layout.id)}@${esc(profile.layout.version)}</code></div>
+    ${profileWarningHtml}
+    ${approximationWarningHtml}
+    ${profile ? `<div class="kv-layout-id">${esc(t('sum.kvLayout'))}<code>${esc(profile.layout.id)}@${esc(profile.layout.version)}</code></div>` : ''}
     <div class="kv-table-wrap"><table class="kv-table">
       <thead><tr><th>${esc(t('kv.buffer'))}</th><th>${esc(t('kv.layers'))}</th><th>${esc(t('kv.elements'))}</th><th>${esc(t('kv.dtype'))}</th><th>${esc(t('kv.bytes'))}</th><th>${esc(t('kv.formula'))}</th></tr></thead>
       <tbody>${rows}</tbody>

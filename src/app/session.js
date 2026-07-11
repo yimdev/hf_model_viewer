@@ -1,13 +1,7 @@
 import { analyze } from '../engine/index.js';
 import { createTensorMetadataIndex } from '../tree/index.js';
 import { estimateVRAM } from '../vram/index.js';
-
-function maxContextLength(config) {
-  const value = config.max_position_embeddings
-    ?? config.max_sequence_length
-    ?? config.max_position_embedding;
-  return typeof value === 'number' && value > 0 ? value : null;
-}
+import { maxContextLength } from '../vram/kv/config-access.js';
 
 function freezeSnapshot(snapshot) {
   return Object.freeze({

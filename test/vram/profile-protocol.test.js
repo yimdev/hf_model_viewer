@@ -28,7 +28,7 @@ test('audited repository revision produces a verified Profile calculation', () =
   assert.equal(result.totalBytes, 10_484_736);
 });
 
-test('valid config drift calculates from current inputs and lowers Profile Assurance', () => {
+test('valid config drift calculates from current inputs and lowers Calculation Assurance', () => {
   const { config } = deepseekV4ProFixture();
   config.num_hidden_layers = 1;
   config.compress_ratios = [128];
@@ -93,7 +93,7 @@ test('missing algorithm input keeps calculation unknown', () => {
   });
 });
 
-test('invalid provenance blocks calculation without inventing Profile Assurance', () => {
+test('invalid provenance blocks calculation without inventing Calculation Assurance', () => {
   const { config } = deepseekV4ProFixture();
 
   const result = computeKV({

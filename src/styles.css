@@ -384,10 +384,12 @@ input[type="range"] { width: 100%; accent-color: var(--primary); }
 .tag.mqa { background: #cffafe; color: #0e7490; }
 .tag.profile { background: #e0e7ff; color: #3730a3; font-weight: 700; }
 .tag.verified { background: var(--green-bg); color: var(--green); font-weight: 700; }
+.tag.approximate { background: #fef3c7; color: #b45309; font-weight: 700; }
 .dsa-note { color: #b45309; background: #fffbeb; border: 1px dashed #fcd34d; border-radius: 6px; padding: 6px 8px; margin-top: 6px; }
 
 .kv-details { font-size: 12px; }
 .kv-unknown { border: 1px solid #fecaca; background: #fff7f7; color: #991b1b; border-radius: 8px; padding: 12px; display: grid; gap: 5px; }
+.kv-approximate { border: 1px solid #fcd34d; background: #fffbeb; color: #92400e; border-radius: 8px; padding: 12px; display: grid; gap: 5px; margin-bottom: 10px; }
 .kv-unknown code, .kv-profile-head code, .kv-layout-id code { margin-left: 8px; color: var(--muted); }
 .kv-mismatch { color: var(--muted); word-break: break-word; }
 .kv-profile-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 6px; }

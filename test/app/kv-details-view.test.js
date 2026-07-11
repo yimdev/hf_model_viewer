@@ -43,3 +43,40 @@ test('KV audit adapter renders provenance and truncates structured config differ
   assert.match(container.innerHTML, /<div>\+1<\/div>/);
   assert.doesNotMatch(container.innerHTML, /First-party evidence/);
 });
+
+test('KV audit adapter labels Generic KV Cache Estimates as approximate', () => {
+  const container = { innerHTML: '' };
+
+  renderKVDetails(container, {
+    calculation: { status: 'computed', diagnostic: null },
+    assurance: { status: 'approximate', warnings: [{ code: 'generic_fallback' }] },
+    provenance: {
+      repoId: 'org/unsupported',
+      commitId: '1111111111111111111111111111111111111111',
+      auditedCommitId: null,
+    },
+    profile: null,
+    approximation: {
+      id: 'generic-mha-gqa-v1',
+      version: '1.0.0',
+      label: 'Generic MHA/GQA KV Cache Estimate',
+      assumptions: [
+        { code: 'uniform_full_context_attention' },
+        { code: 'head_dim_derived', assumedHeadDim: 128 },
+        { code: 'cache_dtype_defaulted', assumedDtype: 'BF16' },
+      ],
+    },
+    buffers: [{
+      id: 'generic.key', label: 'Key', layerGroup: {}, elements: 1,
+      dtype: 'BF16', bytesPerElement: 2, bytes: 2, gb: 2 / (1024 ** 3), formula: '1 × 2',
+    }],
+    vKV: 2 / (1024 ** 3),
+  });
+
+  assert.match(container.innerHTML, /Generic MHA\/GQA KV Cache Estimate/);
+  assert.match(container.innerHTML, /Approximate/);
+  assert.match(container.innerHTML, /uniform full-context attention/i);
+  assert.match(container.innerHTML, /head dimension derived/i);
+  assert.match(container.innerHTML, /BF16/);
+  assert.doesNotMatch(container.innerHTML, /KV Cache could not be verified/);
+});

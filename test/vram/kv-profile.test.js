@@ -32,25 +32,155 @@ function calculate(source, fixture, workload = {}) {
   return computeKV({ source, config: fixture.config, ...workload });
 }
 
-test('unsupported Model Repository Identifier fails closed', () => {
+test('unsupported Model Repository Identifier uses an approximate standard GQA fallback', () => {
   const result = computeKV({
     source: {
       repoId: 'unknown/model',
       commitId: '1111111111111111111111111111111111111111',
     },
-    config: {},
+    config: {
+      num_hidden_layers: 2,
+      hidden_size: 1024,
+      num_attention_heads: 8,
+      num_key_value_heads: 2,
+      torch_dtype: 'bfloat16',
+      max_position_embeddings: 4096,
+    },
+    batch: 1,
+    seq: 10,
   });
 
-  assert.equal(result.calculation.status, 'unknown');
-  assert.equal(result.calculation.diagnostic.code, 'unsupported_model_architecture');
-  assert.equal(result.totalBytes, null);
-  assert.equal(result.assurance, null);
+  assert.equal(result.calculation.status, 'computed');
+  assert.equal(result.assurance.status, 'approximate');
+  assert.equal(result.profile, null);
+  assert.equal(result.approximation.id, 'generic-mha-gqa-v1');
+  assert.equal(result.totalBytes, 20_480);
+  assert.deepEqual(
+    result.approximation.assumptions.map((assumption) => assumption.code),
+    [
+      'uniform_full_context_attention',
+      'standard_key_value_buffers',
+      'head_dim_derived',
+      'cache_dtype_from_model_dtype',
+    ],
+  );
+  assert.deepEqual(
+    result.buffers.map(({ id, elements, bytes, dtype }) => ({ id, elements, bytes, dtype })),
+    [
+      { id: 'generic.key', elements: 5120, bytes: 10_240, dtype: 'BF16' },
+      { id: 'generic.value', elements: 5120, bytes: 10_240, dtype: 'BF16' },
+    ],
+  );
+});
+
+test('generic fallback only requires dimensions that are not already explicit', () => {
+  const result = computeKV({
+    source: {
+      repoId: 'unknown/explicit-dimensions',
+      commitId: '1111111111111111111111111111111111111111',
+    },
+    config: {
+      num_hidden_layers: 1,
+      num_key_value_heads: 2,
+      head_dim: 64,
+    },
+    batch: 1,
+    seq: 1,
+  });
+
+  assert.equal(result.calculation.status, 'computed');
+  assert.equal(result.totalBytes, 512);
+  assert.equal(result.buffers[0].dtype, 'BF16');
+  assert.ok(
+    result.approximation.assumptions.some((assumption) => (
+      assumption.code === 'cache_dtype_defaulted'
+    )),
+  );
+});
+
+test('generic fallback combines nested text dimensions with root model defaults', () => {
+  const result = computeKV({
+    source: {
+      repoId: 'unknown/nested-config',
+      commitId: '1111111111111111111111111111111111111111',
+    },
+    config: {
+      torch_dtype: 'float16',
+      max_position_embeddings: 4096,
+      text_config: {
+        num_hidden_layers: 1,
+        num_attention_heads: 4,
+        hidden_size: 256,
+      },
+    },
+    batch: 1,
+    seq: 1,
+  });
+
+  assert.equal(result.calculation.status, 'computed');
+  assert.equal(result.totalBytes, 1024);
+  assert.equal(result.buffers[0].dtype, 'F16');
+  assert.ok(
+    result.approximation.assumptions.some((assumption) => (
+      assumption.code === 'cache_dtype_from_model_dtype'
+    )),
+  );
+  assert.ok(
+    result.approximation.assumptions.every((assumption) => (
+      assumption.code !== 'max_context_unavailable'
+    )),
+  );
+});
+
+test('explicit cache dtype outranks model dtype across config scopes', () => {
+  const result = computeKV({
+    source: {
+      repoId: 'unknown/cache-dtype-precedence',
+      commitId: '1111111111111111111111111111111111111111',
+    },
+    config: {
+      kv_cache_dtype: 'fp8',
+      text_config: {
+        num_hidden_layers: 1,
+        num_attention_heads: 4,
+        hidden_size: 256,
+        torch_dtype: 'bfloat16',
+      },
+    },
+    batch: 1,
+    seq: 1,
+  });
+
+  assert.equal(result.calculation.status, 'computed');
+  assert.equal(result.totalBytes, 512);
+  assert.equal(result.buffers[0].dtype, 'F8');
+  assert.ok(
+    result.approximation.assumptions.every((assumption) => (
+      !['cache_dtype_defaulted', 'cache_dtype_from_model_dtype'].includes(assumption.code)
+    )),
+  );
 });
 
 test('supported repository requires an immutable commit ID', () => {
   const result = computeKV({
     source: { repoId: SOURCES.hy3.repoId, commitId: 'main' },
     config: hy3Fixture().config,
+  });
+
+  assert.equal(result.calculation.status, 'unknown');
+  assert.equal(result.calculation.diagnostic.code, 'invalid_model_provenance');
+});
+
+test('generic fallback requires a canonical repository ID', () => {
+  const result = computeKV({
+    source: { commitId: '1111111111111111111111111111111111111111' },
+    config: {
+      num_hidden_layers: 1,
+      num_key_value_heads: 1,
+      head_dim: 64,
+    },
+    batch: 1,
+    seq: 1,
   });
 
   assert.equal(result.calculation.status, 'unknown');
@@ -191,6 +321,26 @@ test('safe-integer validation keeps impossible calculations unknown', () => {
   const result = calculate(SOURCES.hy3, hy3Fixture(), {
     batch: Number.MAX_SAFE_INTEGER,
     seq: 262144,
+  });
+
+  assert.equal(result.calculation.status, 'unknown');
+  assert.equal(result.calculation.diagnostic.code, 'profile_calculation_out_of_range');
+});
+
+test('generic fallback rejects an unsafe sum even when each buffer is safe', () => {
+  const result = computeKV({
+    source: {
+      repoId: 'unknown/unsafe-total',
+      commitId: '1111111111111111111111111111111111111111',
+    },
+    config: {
+      num_hidden_layers: 1,
+      num_key_value_heads: 1,
+      head_dim: 1,
+      kv_cache_dtype: 'fp8',
+    },
+    batch: 5_000_000_000_000_000,
+    seq: 1,
   });
 
   assert.equal(result.calculation.status, 'unknown');

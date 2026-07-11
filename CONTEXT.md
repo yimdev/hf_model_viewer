@@ -32,16 +32,20 @@ _Avoid_: Generic layout, shared formula as proof of correctness
 A dedicated Layout whose current Model Repository Identifier, immutable commit, and every algorithm-dependent config input equal the Architecture Profile's audited baseline; other valid revisions may still produce a warning calculation but are not Verified.
 _Avoid_: Treating a warning calculation as Verified, primitive-only test coverage
 
-**Profile Assurance**:
-The verification state of an Architecture Profile calculation; it is `verified` only when the current immutable commit and every algorithm-dependent config input match the audited baseline, otherwise it is `warning` with structured commit and config differences.
-_Avoid_: Calculation availability, Complete VRAM Estimate completeness
+**Calculation Assurance**:
+The confidence state attached to a KV Cache evaluation when provenance and config permit one, independently of whether the byte calculation completes. A dedicated Architecture Profile is `verified` only when its current immutable commit and every algorithm-dependent config input match the audited baseline, otherwise it is `warning` with structured commit and config differences. A computed Generic KV Cache Estimate is always `approximate` and exposes its assumptions.
+_Avoid_: Calculation availability, Complete VRAM Estimate completeness, treating `approximate` as Profile verification
+
+**Generic KV Cache Estimate**:
+An explicitly approximate Effective KV Cache Payload calculated for a Model Repository Identifier without an Architecture Profile by assuming a uniform full-context MHA/GQA key-and-value cache from the current config; it remains approximate regardless of apparent config completeness and must expose its assumptions.
+_Avoid_: Verified Layout, Architecture Profile, exact result, generic architecture support
 
 **Effective KV Cache Payload**:
 All KV Cache data that model semantics require to remain GPU-resident for a specified batch and context, including model-defined compression, windows, indexers, and cache DType but excluding framework capacity reservations, allocator fragmentation, and offload policy.
 _Avoid_: Framework allocation, CUDA reserved memory
 
 **Complete VRAM Estimate**:
-A total VRAM result available only when weights and an Effective KV Cache Payload are both known; if either required component is unknown, the total must remain unknown, while Profile Assurance independently communicates whether a known result is Verified or warning-only.
+A total VRAM result available only when weights and an Effective KV Cache Payload are both known; if either required component is unknown, the total must remain unknown, while Calculation Assurance and Generic KV Cache Estimate assumptions independently communicate result confidence.
 _Avoid_: Treating unknown KV as zero, partial total VRAM
 
 **Architecture Layout Catalog**:
@@ -49,8 +53,8 @@ An explicit catalog that maps each canonical Model Repository Identifier to exac
 _Avoid_: Model Class Identifier routing, automatic architecture guessing, rule-based routing
 
 **Unsupported Model Architecture**:
-A Model Architecture whose canonical Model Repository Identifier is not explicitly included in the Architecture Layout Catalog; its KV Cache VRAM usage is unknown and must not be estimated through a generic formula or heuristic fallback.
-_Avoid_: Guessed result, default MHA
+A Model Architecture whose canonical Model Repository Identifier is not explicitly included in the Architecture Layout Catalog; it has no Verified Layout, though a Generic KV Cache Estimate may still provide an explicitly approximate value when the current config contains sufficient standard attention dimensions.
+_Avoid_: Treating generic fallback as verified, silently guessed result
 
 **Tensor Name Tree**:
 A lossless presentation of parsed tensor metadata as a left-to-right prefix tree of dot-delimited tensor names; branch rows show cumulative prefixes and direct child counts, while leaves retain the original Shape, DType, parameters, and bytes.

@@ -9,7 +9,7 @@ const GLM_SOURCE = Object.freeze({
   commitId: 'b4734de4facf877f85769a911abafc5283eab3d9',
 });
 
-test('Complete VRAM Estimate stays unknown for an unsupported repository', () => {
+test('Complete VRAM Estimate stays unknown when generic config dimensions are insufficient', () => {
   const result = estimateVRAM({
     source: {
       repoId: 'unknown/model',
@@ -22,7 +22,7 @@ test('Complete VRAM Estimate stays unknown for an unsupported repository', () =>
 
   assert.equal(result.complete, false);
   assert.equal(result.calculation.status, 'unknown');
-  assert.equal(result.calculation.diagnostic.code, 'unsupported_model_architecture');
+  assert.equal(result.calculation.diagnostic.code, 'generic_config_insufficient');
   assert.equal(result.vKV, null);
   assert.equal(result.vTotal, null);
   assert.equal(result.breakdown.kvGB, null);
@@ -30,7 +30,31 @@ test('Complete VRAM Estimate stays unknown for an unsupported repository', () =>
   assert.deepEqual(result.buffers, []);
 });
 
-test('warning Profile Assurance still permits a Complete VRAM Estimate', () => {
+test('Generic KV Cache Estimate can complete total VRAM with approximate assurance', () => {
+  const result = estimateVRAM({
+    source: {
+      repoId: 'unknown/model',
+      commitId: '1111111111111111111111111111111111111111',
+    },
+    config: {
+      num_hidden_layers: 2,
+      hidden_size: 1024,
+      num_attention_heads: 8,
+      num_key_value_heads: 2,
+      torch_dtype: 'bfloat16',
+    },
+    tensors: [{ name: 'model.weight', shape: [10, 10], dtype: 'BF16' }],
+    workload: { batch: 1, seq: 10 },
+  });
+
+  assert.equal(result.complete, true);
+  assert.equal(result.assurance.status, 'approximate');
+  assert.equal(result.approximation.id, 'generic-mha-gqa-v1');
+  assert.equal(result.vKV, 20_480 / (1024 ** 3));
+  assert.equal(result.vTotal, 20_680 / (1024 ** 3));
+});
+
+test('warning Calculation Assurance still permits a Complete VRAM Estimate', () => {
   const fixture = glm52Fixture();
   const result = estimateVRAM({
     source: { ...GLM_SOURCE, commitId: '1111111111111111111111111111111111111111' },
