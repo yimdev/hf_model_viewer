@@ -1,5 +1,7 @@
 # LLM VRAM 计算器 — 零下载 GPU 显存估算工具
 
+## [立即使用在线计算器 →](https://yimdev.github.io/hf_model_viewer/)
+
 [English](./README.md) | [简体中文](./README.zh-CN.md)
 
 > 无需下载模型权重，即可解析任意 Hugging Face 模型的拓扑结构，并结合已验证的架构档案（Architecture Profile）或明确标记为近似值的通用 KV Cache 回退估算 GPU 显存。首批档案覆盖 GLM 5.2、DeepSeek V4 Pro、Hunyuan 3 和 Qwen 3.6 35B A3B。

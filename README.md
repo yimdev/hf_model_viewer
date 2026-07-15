@@ -1,5 +1,7 @@
 # LLM VRAM Calculator — Zero-Download GPU Memory Estimator
 
+## [Open the live calculator →](https://yimdev.github.io/hf_model_viewer/)
+
 [English](./README.md) | [简体中文](./README.zh-CN.md)
 
 > Parse any Hugging Face model topology without downloading weights, then estimate GPU VRAM from verified Architecture Profiles or an explicitly approximate generic KV Cache fallback. Initial profiles cover GLM 5.2, DeepSeek V4 Pro, Hunyuan 3, and Qwen 3.6 35B A3B.
